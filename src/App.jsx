@@ -110,9 +110,24 @@ const App = () => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
+  const requestAuthEndpoint = async ({ method, path, data, headers }) => {
+    try {
+      return await axios({ method, url: `/api${path}`, data, headers });
+    } catch (err) {
+      if (err?.response?.status === 404) {
+        return axios({ method, url: path, data, headers });
+      }
+      throw err;
+    }
+  };
+
   const checkAuthStatus = async () => {
     try {
-      const statusRes = await axios.get('/api/auth/status', { headers: getAuthHeaders() });
+      const statusRes = await requestAuthEndpoint({
+        method: 'get',
+        path: '/auth/status',
+        headers: getAuthHeaders()
+      });
       setAuthEnabled(Boolean(statusRes.data?.enabled));
       setIsAuthenticated(Boolean(statusRes.data?.authenticated));
       return statusRes.data;
@@ -172,7 +187,11 @@ const App = () => {
     setLoginError(null);
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/login', { password: loginPassword });
+      const res = await requestAuthEndpoint({
+        method: 'post',
+        path: '/auth/login',
+        data: { password: loginPassword }
+      });
       const token = res.data?.token;
       if (!token) throw new Error('No auth token returned');
       window.localStorage.setItem(authStorageKey, token);

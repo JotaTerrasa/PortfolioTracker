@@ -15,12 +15,13 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const port = process.env.SERVER_PORT || 3001;
+const isVercel = process.env.VERCEL === '1';
 
 app.use(cors());
 app.use(express.json());
 
 // ─── SQLite DB Setup ───────────────────────────────────────────
-const dbPath = join(__dirname, 'portfolio.db');
+const dbPath = isVercel ? '/tmp/portfolio.db' : join(__dirname, 'portfolio.db');
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
@@ -97,8 +98,10 @@ async function sync1YearHighs() {
   }
   console.log('[CoinGecko] 1-Year High sync complete.');
 }
-sync1YearHighs();
-setInterval(sync1YearHighs, 24 * 60 * 60 * 1000); // refresh daily
+if (!isVercel) {
+  sync1YearHighs();
+  setInterval(sync1YearHighs, 24 * 60 * 60 * 1000); // refresh daily
+}
 
 // ─── CoinGecko fetcher with 24h change and Icons ─────────────────────────
 async function getCoinGeckoPrices(symbols) {
@@ -236,13 +239,15 @@ const saveSnapshot = async () => {
   }
 };
 
-// In development, save every 10 minutes for quick testing. Real usage: maybe every hour.
-cron.schedule('*/10 * * * *', saveSnapshot);
+if (!isVercel) {
+  // In development, save every 10 minutes for quick testing. Real usage: maybe every hour.
+  cron.schedule('*/10 * * * *', saveSnapshot);
 
-// Take an initial snapshot if DB is empty
-db.get('SELECT COUNT(*) as count FROM snapshots', (err, row) => {
-  if (row?.count === 0) saveSnapshot();
-});
+  // Take an initial snapshot if DB is empty
+  db.get('SELECT COUNT(*) as count FROM snapshots', (err, row) => {
+    if (row?.count === 0) saveSnapshot();
+  });
+}
 
 // ─── API Endpoints ─────────────────────────────────────────────
 app.get('/api/history', (req, res) => {
@@ -388,6 +393,10 @@ app.get('/api/balance', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+if (!isVercel) {
+  app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+}
+
+export default app;

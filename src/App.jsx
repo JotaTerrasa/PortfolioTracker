@@ -81,6 +81,7 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
+  const [historyRange, setHistoryRange] = useState('24h');
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [activeTab, setActiveTab] = useState('dashboard');
   const [targetPrices, setTargetPrices] = useState({});
@@ -259,11 +260,6 @@ const App = () => {
     ...(data?.bitpanda.map(a => ({ ...a, exchange: 'Bitpanda' })) || [])
   ].sort((a, b) => b.value - a.value);
 
-  const exchangeData = [
-    { name: 'BingX', value: data?.bingx.reduce((sum, a) => sum + a.value, 0) || 0 },
-    { name: 'Bitpanda', value: data?.bitpanda.reduce((sum, a) => sum + a.value, 0) || 0 }
-  ];
-
   const groupedTokens = allAssets.reduce((acc, curr) => {
     acc[curr.coin] = (acc[curr.coin] || 0) + curr.value;
     return acc;
@@ -344,10 +340,22 @@ const App = () => {
   const portfolioPrevValue = data?.total_usd - totalChange24hUsd;
   const totalChange24hPct = portfolioPrevValue > 0 ? (totalChange24hUsd / portfolioPrevValue) * 100 : 0;
 
-  const historyChartData = history.map(h => ({
+  const historyRangeMs = {
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    '30d': 30 * 24 * 60 * 60 * 1000
+  };
+
+  const historyCutoff = historyRange === 'all' ? null : Date.now() - historyRangeMs[historyRange];
+  const filteredHistory = historyCutoff
+    ? history.filter(h => new Date(h.timestamp).getTime() >= historyCutoff)
+    : history;
+
+  const historyForChart = filteredHistory.length > 0 ? filteredHistory : history;
+  const historyChartData = historyForChart.map(h => ({
     time: new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     fullTime: new Date(h.timestamp).toLocaleString(),
-    value: h.total_usd
+    value: Number(h.total_usd) || 0
   }));
 
   // Consolidated Assets for Simulator
@@ -532,8 +540,22 @@ const App = () => {
 
           <div className="chart-section main-chart-section">
             <div className="card chart-card history-chart-card">
-              <div className="stat-label" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <History size={18} /> Histórico de Valor
+              <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div className="stat-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <History size={18} /> Histórico de Valor
+                </div>
+                <div className="history-range-controls">
+                  {['24h', '7d', '30d', 'all'].map(range => (
+                    <button
+                      key={range}
+                      className={`history-range-btn ${historyRange === range ? 'active' : ''}`}
+                      onClick={() => setHistoryRange(range)}
+                      type="button"
+                    >
+                      {range}
+                    </button>
+                  ))}
+                </div>
               </div>
               <ResponsiveContainer width="100%" height="80%">
                 <AreaChart data={historyChartData}>

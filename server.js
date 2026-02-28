@@ -23,6 +23,10 @@ const pgSql = databaseUrl ? neon(databaseUrl) : null;
 const dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
 const authEnabled = Boolean(dashboardPassword);
 const authSecret = process.env.AUTH_SECRET || dashboardPassword || 'dev-fallback-secret';
+const loginMaxAttempts = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
+const loginWindowMs = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000);
+const loginBlockMs = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+const loginAttempts = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -47,6 +51,42 @@ function createAuthToken() {
   const signature = signAuthPayload(payloadB64);
   return `${payloadB64}.${signature}`;
 }
+
+const getClientIp = (req) => {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0].trim();
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+};
+
+const registerFailedLoginAttempt = (ip) => {
+  const now = Date.now();
+  const current = loginAttempts.get(ip);
+  let attempt = current;
+
+  if (!attempt || now - attempt.windowStart > loginWindowMs) {
+    attempt = { count: 0, windowStart: now, blockedUntil: 0 };
+  }
+
+  attempt.count += 1;
+  if (attempt.count >= loginMaxAttempts) {
+    attempt.blockedUntil = now + loginBlockMs;
+  }
+
+  loginAttempts.set(ip, attempt);
+  return attempt;
+};
+
+const getActiveLoginBlock = (ip) => {
+  const attempt = loginAttempts.get(ip);
+  if (!attempt) return null;
+
+  const now = Date.now();
+  if (attempt.blockedUntil && attempt.blockedUntil > now) return attempt;
+  if (attempt.blockedUntil && attempt.blockedUntil <= now) {
+    loginAttempts.delete(ip);
+  }
+  return null;
+};
 
 function verifyAuthToken(token) {
   if (!token) return false;
@@ -303,7 +343,9 @@ async function getExchangePrices(symbols, bingxClient) {
           change24h: ticker.percentage || 0
         };
       }
-    } catch (e) { }
+    } catch {
+      // Ignore unsupported symbols/tickers on exchange fallback.
+    }
   }
   return prices;
 }
@@ -397,10 +439,20 @@ const handleAuthStatus = (req, res) => {
 
 const handleAuthLogin = (req, res) => {
   if (!authEnabled) return res.json({ enabled: false, token: null });
+  const ip = getClientIp(req);
+  const activeBlock = getActiveLoginBlock(ip);
+  if (activeBlock) {
+    const waitSeconds = Math.ceil((activeBlock.blockedUntil - Date.now()) / 1000);
+    return res.status(429).json({ error: `Demasiados intentos. Reintenta en ${waitSeconds}s.` });
+  }
+
   const { password } = req.body || {};
   if (!password || password !== dashboardPassword) {
+    registerFailedLoginAttempt(ip);
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
+
+  loginAttempts.delete(ip);
   const token = createAuthToken();
   return res.json({ enabled: true, token });
 };
@@ -475,7 +527,9 @@ const handleBalance = async (req, res) => {
             const avg = tc / tb;
             costBasis[asset.coin] = { avgCost: avg, totalInvested: avg * asset.amount };
           }
-        } catch (e) { }
+        } catch {
+          // Ignore per-asset trade history failures and keep response flowing.
+        }
       }
     }
 
@@ -512,7 +566,9 @@ const handleBalance = async (req, res) => {
             costBasis[`bp_${sym}`] = { avgCost: s.tc / s.tb, totalInvested: (s.tc / s.tb) * amount };
           }
         });
-      } catch (e) { }
+      } catch {
+        // Ignore Bitpanda trade-history parsing failures for resilience.
+      }
     }
 
     // Manual cost basis overrides (Total Cost or Average Price)
@@ -574,6 +630,33 @@ app.get('/api/snapshot', handleSnapshot);
 app.get('/snapshot', handleSnapshot);
 app.get('/api/balance', handleBalance);
 app.get('/balance', handleBalance);
+
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbStatus = { connected: false, engine: isVercel ? 'postgres' : 'sqlite' };
+    if (isVercel) {
+      if (pgSql) {
+        await pgSql`SELECT 1`;
+        dbStatus.connected = true;
+      }
+    } else {
+      dbStatus.connected = Boolean(db);
+    }
+
+    res.json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      auth: { enabled: authEnabled },
+      db: dbStatus
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      timestamp: new Date().toISOString(),
+      error: err.message
+    });
+  }
+});
 
 if (!isVercel) {
   app.listen(port, () => {

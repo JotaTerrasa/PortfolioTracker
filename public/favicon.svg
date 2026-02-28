@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="20" y1="18" x2="46" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)"/>
+  <rect x="7" y="7" width="50" height="50" rx="13" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+
+  <!-- Uptrend glyph -->
+  <path d="M18 40 L28 30 L35 36 L46 24" fill="none" stroke="url(#glyph)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M41 24 H46 V29" fill="none" stroke="url(#glyph)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Small node accents -->
+  <circle cx="18" cy="40" r="2.6" fill="#f8fafc"/>
+  <circle cx="28" cy="30" r="2.4" fill="#f8fafc"/>
+  <circle cx="35" cy="36" r="2.4" fill="#f8fafc"/>
+</svg>

@@ -107,6 +107,9 @@ DATABASE_URL=postgres://...
 CRON_SECRET=your_random_secret
 DASHBOARD_PASSWORD=your_dashboard_password
 AUTH_SECRET=your_auth_signing_secret
+LOGIN_MAX_ATTEMPTS=5
+LOGIN_WINDOW_MS=600000
+LOGIN_BLOCK_MS=900000
 BINGX_API_KEY=...
 BINGX_SECRET_KEY=...
 BITPANDA_API_KEY=...
@@ -179,6 +182,19 @@ Body esperado:
 { "password": "tu_password" }
 ```
 
+Protección anti fuerza bruta configurable:
+
+- `LOGIN_MAX_ATTEMPTS`: intentos máximos por IP.
+- `LOGIN_WINDOW_MS`: ventana de conteo en milisegundos.
+- `LOGIN_BLOCK_MS`: tiempo de bloqueo tras exceder intentos.
+
+### `GET /api/health`
+Healthcheck del backend:
+
+- `ok`: estado general de la API.
+- `auth.enabled`: si autenticación está activa.
+- `db.connected`: estado de conexión de base de datos.
+
 ---
 
 ## Persistencia y snapshots
@@ -215,6 +231,9 @@ Comportamiento:
    - `CRON_SECRET` (recomendado)
    - `DASHBOARD_PASSWORD` (opcional, activa login del dashboard)
    - `AUTH_SECRET` (recomendado si usas auth)
+   - `LOGIN_MAX_ATTEMPTS` (opcional)
+   - `LOGIN_WINDOW_MS` (opcional)
+   - `LOGIN_BLOCK_MS` (opcional)
    - `BINGX_API_KEY`
    - `BINGX_SECRET_KEY`
    - `BITPANDA_API_KEY`
@@ -298,6 +317,5 @@ Además:
 
 - Export CSV/PDF de cartera e histórico.
 - Alertas de precio/objetivo por activo.
-- Autenticación para acceso al dashboard.
 - Tests unitarios y e2e.
 - Dockerfile + docker-compose para despliegue reproducible.

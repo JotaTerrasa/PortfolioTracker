@@ -129,6 +129,7 @@ const App = () => {
     } catch (err) {
       if (err?.response?.status === 401) {
         window.localStorage.removeItem(authStorageKey);
+        setAuthEnabled(true);
         setIsAuthenticated(false);
         setLoginError('Sesión expirada. Vuelve a iniciar sesión.');
         setError(null);

@@ -66,8 +66,10 @@ function verifyAuthToken(token) {
 
 function requireDashboardAuth(req, res, next) {
   if (!authEnabled) return next();
-  if (req.path.startsWith('/auth/')) return next();
-  if (req.path === '/snapshot') return next();
+  const reqPath = req.path || '';
+  const originalUrl = req.originalUrl || '';
+  if (reqPath.startsWith('/auth/') || reqPath.startsWith('/api/auth/') || originalUrl.includes('/auth/')) return next();
+  if (reqPath === '/snapshot' || reqPath === '/api/snapshot' || originalUrl.includes('/snapshot')) return next();
 
   const token = parseBearerToken(req.headers.authorization || '');
   if (!verifyAuthToken(token)) {
@@ -387,13 +389,13 @@ if (!isVercel) {
 }
 
 // ─── API Endpoints ─────────────────────────────────────────────
-app.get('/api/auth/status', (req, res) => {
+const handleAuthStatus = (req, res) => {
   if (!authEnabled) return res.json({ enabled: false, authenticated: true });
   const token = parseBearerToken(req.headers.authorization || '');
   return res.json({ enabled: true, authenticated: verifyAuthToken(token) });
-});
+};
 
-app.post('/api/auth/login', (req, res) => {
+const handleAuthLogin = (req, res) => {
   if (!authEnabled) return res.json({ enabled: false, token: null });
   const { password } = req.body || {};
   if (!password || password !== dashboardPassword) {
@@ -401,9 +403,9 @@ app.post('/api/auth/login', (req, res) => {
   }
   const token = createAuthToken();
   return res.json({ enabled: true, token });
-});
+};
 
-app.get('/api/history', async (req, res) => {
+const handleHistory = async (req, res) => {
   try {
     const rows = await getSnapshots();
     res.json(rows);
@@ -411,9 +413,9 @@ app.get('/api/history', async (req, res) => {
     console.error('[History] Error fetching snapshots:', err.message);
     return res.json([]);
   }
-});
+};
 
-app.get('/api/snapshot', async (req, res) => {
+const handleSnapshot = async (req, res) => {
   if (isVercel && process.env.CRON_SECRET) {
     const authHeader = req.headers.authorization || '';
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -424,9 +426,9 @@ app.get('/api/snapshot', async (req, res) => {
   const ok = await saveSnapshot();
   if (!ok) return res.status(500).json({ error: 'Snapshot failed' });
   res.json({ ok: true });
-});
+};
 
-app.get('/api/balance', async (req, res) => {
+const handleBalance = async (req, res) => {
   const balances = { bingx: [], bitpanda: [], total_usd: 0, total_invested: 0, total_pnl: 0, eur_rate: 0.92 };
   let bingxClient = null;
 
@@ -560,7 +562,18 @@ app.get('/api/balance', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
+
+app.get('/api/auth/status', handleAuthStatus);
+app.get('/auth/status', handleAuthStatus);
+app.post('/api/auth/login', handleAuthLogin);
+app.post('/auth/login', handleAuthLogin);
+app.get('/api/history', handleHistory);
+app.get('/history', handleHistory);
+app.get('/api/snapshot', handleSnapshot);
+app.get('/snapshot', handleSnapshot);
+app.get('/api/balance', handleBalance);
+app.get('/balance', handleBalance);
 
 if (!isVercel) {
   app.listen(port, () => {

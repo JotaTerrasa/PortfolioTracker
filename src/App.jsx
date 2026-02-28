@@ -96,6 +96,15 @@ const App = () => {
   }, [isLightMode]);
 
   const getAuthToken = () => window.localStorage.getItem(authStorageKey);
+  const getApiErrorMessage = (err, fallback) => {
+    const raw = err?.response?.data?.error;
+    if (typeof raw === 'string') return raw;
+    if (raw && typeof raw === 'object') {
+      if (typeof raw.message === 'string') return raw.message;
+      return JSON.stringify(raw);
+    }
+    return fallback;
+  };
   const getAuthHeaders = () => {
     const token = getAuthToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -171,7 +180,7 @@ const App = () => {
       setIsAuthenticated(true);
       await fetchData();
     } catch (err) {
-      setLoginError(err?.response?.data?.error || 'No se pudo iniciar sesión.');
+      setLoginError(getApiErrorMessage(err, 'No se pudo iniciar sesión.'));
       setLoading(false);
     }
   };

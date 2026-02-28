@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw, AlertCircle, Database, History,
-  ArrowUp, ArrowDown, LayoutDashboard, Rocket, Target, Moon, Sun
+  ArrowUp, ArrowDown, LayoutDashboard, Rocket, Target, Moon, Sun, ShieldCheck
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -77,10 +77,15 @@ const App = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [activeTab, setActiveTab] = useState('dashboard');
   const [targetPrices, setTargetPrices] = useState({});
   const [isLightMode, setIsLightMode] = useState(false);
+  const authStorageKey = 'dashboard_auth_token';
 
   useEffect(() => {
     if (isLightMode) {
@@ -90,18 +95,45 @@ const App = () => {
     }
   }, [isLightMode]);
 
+  const getAuthToken = () => window.localStorage.getItem(authStorageKey);
+  const getAuthHeaders = () => {
+    const token = getAuthToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const checkAuthStatus = async () => {
+    try {
+      const statusRes = await axios.get('/api/auth/status', { headers: getAuthHeaders() });
+      setAuthEnabled(Boolean(statusRes.data?.enabled));
+      setIsAuthenticated(Boolean(statusRes.data?.authenticated));
+      return statusRes.data;
+    } catch {
+      // Backward compatibility in case auth endpoint is not available
+      setAuthEnabled(false);
+      setIsAuthenticated(true);
+      return { enabled: false, authenticated: true };
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const [balanceRes, historyRes] = await Promise.all([
-        axios.get('/api/balance'),
-        axios.get('/api/history')
+        axios.get('/api/balance', { headers: getAuthHeaders() }),
+        axios.get('/api/history', { headers: getAuthHeaders() })
       ]);
       setData(balanceRes.data);
       setHistory(historyRes.data);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
+      if (err?.response?.status === 401) {
+        window.localStorage.removeItem(authStorageKey);
+        setIsAuthenticated(false);
+        setLoginError('Sesión expirada. Vuelve a iniciar sesión.');
+        setError(null);
+        return;
+      }
       setError("Error al conectar con el servidor. Verifica que el backend esté funcionando.");
       console.error(err);
     } finally {
@@ -110,10 +142,77 @@ const App = () => {
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 60000);
+    let interval;
+    const init = async () => {
+      const status = await checkAuthStatus();
+      if (status.enabled && !status.authenticated) {
+        setLoading(false);
+        return;
+      }
+      await fetchData();
+      interval = setInterval(fetchData, 60000);
+    };
+
+    init();
     return () => clearInterval(interval);
   }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoading(true);
+    try {
+      const res = await axios.post('/api/auth/login', { password: loginPassword });
+      const token = res.data?.token;
+      if (!token) throw new Error('No auth token returned');
+      window.localStorage.setItem(authStorageKey, token);
+      setLoginPassword('');
+      setIsAuthenticated(true);
+      await fetchData();
+    } catch (err) {
+      setLoginError(err?.response?.data?.error || 'No se pudo iniciar sesión.');
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    window.localStorage.removeItem(authStorageKey);
+    setIsAuthenticated(false);
+    setData(null);
+    setHistory([]);
+  };
+
+  if (authEnabled && !isAuthenticated && !loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
+        <div className="card" style={{ width: '100%', maxWidth: '420px' }}>
+          <div className="stat-label" style={{ marginBottom: '1rem' }}>
+            <ShieldCheck size={18} /> Acceso Privado
+          </div>
+          <h2 style={{ marginBottom: '0.5rem' }}>Iniciar sesión</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+            Este dashboard requiere contraseña.
+          </p>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Contraseña del dashboard"
+              className="sim-input"
+              style={{ width: '100%' }}
+              autoFocus
+              required
+            />
+            {loginError && <div style={{ color: '#f43f5e', fontSize: '0.85rem' }}>{loginError}</div>}
+            <button type="submit" className="refresh-button" style={{ justifyContent: 'center' }} disabled={loading}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (loading && !data) {
     return (
@@ -292,6 +391,11 @@ const App = () => {
           </p>
         </div>
         <div className="header-actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {authEnabled && (
+            <button className="refresh-button" onClick={handleLogout}>
+              Cerrar sesión
+            </button>
+          )}
           <button className="refresh-button" style={{ padding: '0.75rem' }} onClick={() => setIsLightMode(!isLightMode)}>
             {isLightMode ? <Moon size={18} /> : <Sun size={18} />}
           </button>

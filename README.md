@@ -105,6 +105,8 @@ Variables soportadas:
 SERVER_PORT=3001
 DATABASE_URL=postgres://...
 CRON_SECRET=your_random_secret
+DASHBOARD_PASSWORD=your_dashboard_password
+AUTH_SECRET=your_auth_signing_secret
 BINGX_API_KEY=...
 BINGX_SECRET_KEY=...
 BITPANDA_API_KEY=...
@@ -158,6 +160,25 @@ Genera y persiste un snapshot manualmente.
 - En Vercel se usa para ejecutar snapshots por cron.
 - Si existe `CRON_SECRET`, requiere header `Authorization: Bearer <CRON_SECRET>`.
 
+### `GET /api/auth/status`
+Devuelve estado de autenticación del dashboard:
+
+- `enabled`: si la autenticación está activada (`DASHBOARD_PASSWORD` configurada),
+- `authenticated`: si el token enviado es válido.
+
+### `POST /api/auth/login`
+Inicia sesión del dashboard y devuelve token:
+
+```json
+{ "token": "..." }
+```
+
+Body esperado:
+
+```json
+{ "password": "tu_password" }
+```
+
 ---
 
 ## Persistencia y snapshots
@@ -192,6 +213,8 @@ Comportamiento:
 3. Define variables en Vercel:
    - `DATABASE_URL`
    - `CRON_SECRET` (recomendado)
+   - `DASHBOARD_PASSWORD` (opcional, activa login del dashboard)
+   - `AUTH_SECRET` (recomendado si usas auth)
    - `BINGX_API_KEY`
    - `BINGX_SECRET_KEY`
    - `BITPANDA_API_KEY`

@@ -5,6 +5,7 @@ import ccxt from 'ccxt';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
 import cron from 'node-cron';
+import crypto from 'crypto';
 import { neon } from '@neondatabase/serverless';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -19,9 +20,63 @@ const port = process.env.SERVER_PORT || 3001;
 const isVercel = process.env.VERCEL === '1';
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const pgSql = databaseUrl ? neon(databaseUrl) : null;
+const dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
+const authEnabled = Boolean(dashboardPassword);
+const authSecret = process.env.AUTH_SECRET || dashboardPassword || 'dev-fallback-secret';
 
 app.use(cors());
 app.use(express.json());
+
+const parseBearerToken = (authHeader = '') => {
+  if (!authHeader.startsWith('Bearer ')) return null;
+  return authHeader.slice(7).trim() || null;
+};
+
+const b64url = {
+  encode: (value) => Buffer.from(value).toString('base64url'),
+  decode: (value) => Buffer.from(value, 'base64url').toString('utf8')
+};
+
+function signAuthPayload(payload) {
+  return crypto.createHmac('sha256', authSecret).update(payload).digest('base64url');
+}
+
+function createAuthToken() {
+  const payload = JSON.stringify({ exp: Date.now() + (1000 * 60 * 60 * 24) }); // 24h
+  const payloadB64 = b64url.encode(payload);
+  const signature = signAuthPayload(payloadB64);
+  return `${payloadB64}.${signature}`;
+}
+
+function verifyAuthToken(token) {
+  if (!token) return false;
+  const [payloadB64, signature] = token.split('.');
+  if (!payloadB64 || !signature) return false;
+
+  const expected = signAuthPayload(payloadB64);
+  if (signature !== expected) return false;
+
+  try {
+    const payload = JSON.parse(b64url.decode(payloadB64));
+    return typeof payload.exp === 'number' && payload.exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function requireDashboardAuth(req, res, next) {
+  if (!authEnabled) return next();
+  if (req.path.startsWith('/auth/')) return next();
+  if (req.path === '/snapshot') return next();
+
+  const token = parseBearerToken(req.headers.authorization || '');
+  if (!verifyAuthToken(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return next();
+}
+
+app.use('/api', requireDashboardAuth);
 
 // ─── DB Setup (SQLite local, Postgres on Vercel) ───────────────
 let db = null;
@@ -332,6 +387,22 @@ if (!isVercel) {
 }
 
 // ─── API Endpoints ─────────────────────────────────────────────
+app.get('/api/auth/status', (req, res) => {
+  if (!authEnabled) return res.json({ enabled: false, authenticated: true });
+  const token = parseBearerToken(req.headers.authorization || '');
+  return res.json({ enabled: true, authenticated: verifyAuthToken(token) });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  if (!authEnabled) return res.json({ enabled: false, token: null });
+  const { password } = req.body || {};
+  if (!password || password !== dashboardPassword) {
+    return res.status(401).json({ error: 'Credenciales inválidas' });
+  }
+  const token = createAuthToken();
+  return res.json({ enabled: true, token });
+});
+
 app.get('/api/history', async (req, res) => {
   try {
     const rows = await getSnapshots();

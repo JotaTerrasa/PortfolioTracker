@@ -39,8 +39,8 @@ if (!isVercel) {
 
 let pgInitPromise = null;
 async function ensureSnapshotsTable() {
-  if (!isVercel) return;
-  if (!pgSql) throw new Error('DATABASE_URL/POSTGRES_URL no configurada en Vercel');
+  if (!isVercel) return true;
+  if (!pgSql) return false;
   if (!pgInitPromise) {
     pgInitPromise = pgSql`
       CREATE TABLE IF NOT EXISTS snapshots (
@@ -51,13 +51,15 @@ async function ensureSnapshotsTable() {
     `;
   }
   await pgInitPromise;
+  return true;
 }
 
 async function insertSnapshot(totalUsd) {
   if (isVercel) {
-    await ensureSnapshotsTable();
+    const ready = await ensureSnapshotsTable();
+    if (!ready) return false;
     await pgSql`INSERT INTO snapshots (total_usd) VALUES (${totalUsd})`;
-    return;
+    return true;
   }
 
   await new Promise((resolve, reject) => {
@@ -66,11 +68,13 @@ async function insertSnapshot(totalUsd) {
       else resolve();
     });
   });
+  return true;
 }
 
 async function getSnapshots() {
   if (isVercel) {
-    await ensureSnapshotsTable();
+    const ready = await ensureSnapshotsTable();
+    if (!ready) return [];
     const rows = await pgSql`SELECT id, timestamp, total_usd FROM snapshots ORDER BY timestamp ASC`;
     return rows;
   }
@@ -85,7 +89,8 @@ async function getSnapshots() {
 
 async function getSnapshotCount() {
   if (isVercel) {
-    await ensureSnapshotsTable();
+    const ready = await ensureSnapshotsTable();
+    if (!ready) return 0;
     const rows = await pgSql`SELECT COUNT(*)::int AS count FROM snapshots`;
     return rows[0]?.count || 0;
   }
@@ -299,7 +304,11 @@ const saveSnapshot = async () => {
   const total = await getInternalBalance();
   if (total !== null) {
     try {
-      await insertSnapshot(total);
+      const inserted = await insertSnapshot(total);
+      if (!inserted) {
+        console.warn('[Snapshot] Skipped: no DATABASE_URL/POSTGRES_URL configured.');
+        return false;
+      }
       console.log('[Snapshot] Saved: $', total.toFixed(2));
       return true;
     } catch (err) {
@@ -328,7 +337,8 @@ app.get('/api/history', async (req, res) => {
     const rows = await getSnapshots();
     res.json(rows);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[History] Error fetching snapshots:', err.message);
+    return res.json([]);
   }
 });
 

@@ -412,7 +412,12 @@ const App = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickMargin={10} />
-                  <YAxis stroke="var(--text-muted)" fontSize={11} domain={['auto', 'auto']} tickFormatter={(v) => `$${v}`} />
+                  <YAxis
+                    stroke="rgba(148, 163, 184, 0.9)"
+                    tick={{ fill: 'rgba(148, 163, 184, 0.95)', fontSize: 11 }}
+                    domain={['auto', 'auto']}
+                    tickFormatter={(v) => `$${v}`}
+                  />
                   <Tooltip
                     contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px', color: 'var(--text-main)', backdropFilter: 'blur(10px)' }}
                     itemStyle={{ color: 'var(--text-main)' }}
@@ -450,7 +455,8 @@ const App = () => {
                     itemStyle={{ color: 'var(--text-main)', fontWeight: 600 }}
                   />
                   <Legend
-                    wrapperStyle={{ paddingTop: '20px' }}
+                    wrapperStyle={{ paddingTop: '16px', fontSize: '0.86rem' }}
+                    iconSize={11}
                     formatter={(value, entry) => `${value} (${formatPercent(entry?.payload?.percentage || 0)})`}
                   />
                 </PieChart>

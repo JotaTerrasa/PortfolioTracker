@@ -143,6 +143,10 @@ h1 {
   grid-column: span 2;
 }
 
+.donut-chart-card .recharts-default-legend {
+  line-height: 1.25;
+}
+
 .refresh-button {
   display: flex;
   align-items: center;
@@ -359,6 +363,14 @@ tr:hover td {
   .chart-card {
     height: 340px;
     padding: 1rem;
+  }
+
+  .donut-chart-card .recharts-default-legend {
+    font-size: 0.8rem !important;
+  }
+
+  .donut-chart-card .recharts-legend-item {
+    margin-right: 10px !important;
   }
 
   .tabs-container {
@@ -591,6 +603,10 @@ tr:hover td {
 
   .chart-card {
     height: 310px;
+  }
+
+  .donut-chart-card .recharts-default-legend {
+    font-size: 0.76rem !important;
   }
 
   .refresh-button {

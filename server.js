@@ -5,6 +5,7 @@ import ccxt from 'ccxt';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
 import cron from 'node-cron';
+import { neon } from '@neondatabase/serverless';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -16,21 +17,86 @@ const __dirname = dirname(__filename);
 const app = express();
 const port = process.env.SERVER_PORT || 3001;
 const isVercel = process.env.VERCEL === '1';
+const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+const pgSql = databaseUrl ? neon(databaseUrl) : null;
 
 app.use(cors());
 app.use(express.json());
 
-// ─── SQLite DB Setup ───────────────────────────────────────────
-const dbPath = isVercel ? '/tmp/portfolio.db' : join(__dirname, 'portfolio.db');
-const db = new sqlite3.Database(dbPath);
+// ─── DB Setup (SQLite local, Postgres on Vercel) ───────────────
+let db = null;
+if (!isVercel) {
+  const dbPath = join(__dirname, 'portfolio.db');
+  db = new sqlite3.Database(dbPath);
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_usd REAL
+    )`);
+  });
+}
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    total_usd REAL
-  )`);
-});
+let pgInitPromise = null;
+async function ensureSnapshotsTable() {
+  if (!isVercel) return;
+  if (!pgSql) throw new Error('DATABASE_URL/POSTGRES_URL no configurada en Vercel');
+  if (!pgInitPromise) {
+    pgInitPromise = pgSql`
+      CREATE TABLE IF NOT EXISTS snapshots (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMPTZ DEFAULT NOW(),
+        total_usd DOUBLE PRECISION
+      )
+    `;
+  }
+  await pgInitPromise;
+}
+
+async function insertSnapshot(totalUsd) {
+  if (isVercel) {
+    await ensureSnapshotsTable();
+    await pgSql`INSERT INTO snapshots (total_usd) VALUES (${totalUsd})`;
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    db.run('INSERT INTO snapshots (total_usd) VALUES (?)', [totalUsd], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function getSnapshots() {
+  if (isVercel) {
+    await ensureSnapshotsTable();
+    const rows = await pgSql`SELECT id, timestamp, total_usd FROM snapshots ORDER BY timestamp ASC`;
+    return rows;
+  }
+
+  return await new Promise((resolve, reject) => {
+    db.all('SELECT * FROM snapshots ORDER BY timestamp ASC', (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+async function getSnapshotCount() {
+  if (isVercel) {
+    await ensureSnapshotsTable();
+    const rows = await pgSql`SELECT COUNT(*)::int AS count FROM snapshots`;
+    return rows[0]?.count || 0;
+  }
+
+  return await new Promise((resolve, reject) => {
+    db.get('SELECT COUNT(*) as count FROM snapshots', (err, row) => {
+      if (err) reject(err);
+      else resolve(row?.count || 0);
+    });
+  });
+}
 
 const priceDataCache = {
   data: {}, // Each entry: { price: float, change24h: float }
@@ -232,11 +298,16 @@ const saveSnapshot = async () => {
   console.log('[Snapshot] Taking a snapshot of the portfolio...');
   const total = await getInternalBalance();
   if (total !== null) {
-    db.run('INSERT INTO snapshots (total_usd) VALUES (?)', [total], (err) => {
-      if (err) console.error('[Snapshot] Error saving to DB:', err);
-      else console.log('[Snapshot] Saved: $', total.toFixed(2));
-    });
+    try {
+      await insertSnapshot(total);
+      console.log('[Snapshot] Saved: $', total.toFixed(2));
+      return true;
+    } catch (err) {
+      console.error('[Snapshot] Error saving to DB:', err);
+      return false;
+    }
   }
+  return false;
 };
 
 if (!isVercel) {
@@ -244,17 +315,34 @@ if (!isVercel) {
   cron.schedule('*/10 * * * *', saveSnapshot);
 
   // Take an initial snapshot if DB is empty
-  db.get('SELECT COUNT(*) as count FROM snapshots', (err, row) => {
-    if (row?.count === 0) saveSnapshot();
-  });
+  getSnapshotCount()
+    .then((count) => {
+      if (count === 0) saveSnapshot();
+    })
+    .catch((err) => console.error('[Snapshot] Error checking initial count:', err));
 }
 
 // ─── API Endpoints ─────────────────────────────────────────────
-app.get('/api/history', (req, res) => {
-  db.all('SELECT * FROM snapshots ORDER BY timestamp ASC', (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/api/history', async (req, res) => {
+  try {
+    const rows = await getSnapshots();
     res.json(rows);
-  });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/snapshot', async (req, res) => {
+  if (isVercel && process.env.CRON_SECRET) {
+    const authHeader = req.headers.authorization || '';
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return res.status(401).json({ error: 'Unauthorized snapshot trigger' });
+    }
+  }
+
+  const ok = await saveSnapshot();
+  if (!ok) return res.status(500).json({ error: 'Snapshot failed' });
+  res.json({ ok: true });
 });
 
 app.get('/api/balance', async (req, res) => {

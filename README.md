@@ -5,7 +5,7 @@ Dashboard full-stack para monitorizar un portfolio crypto en tiempo real, con:
 - saldo consolidado (BingX + Bitpanda),
 - distribución por activo,
 - PnL total y por posición,
-- histórico de valor guardado en SQLite,
+- histórico de valor persistente (SQLite local / Postgres en Vercel),
 - simulador de objetivos con estimación de impuestos (IRPF España).
 
 ---
@@ -41,8 +41,9 @@ Dashboard full-stack para monitorizar un portfolio crypto en tiempo real, con:
 - Node.js + Express
 - `ccxt` (BingX)
 - API Bitpanda (REST)
-- SQLite (`sqlite3`)
-- `node-cron` (snapshots periódicos)
+- SQLite (`sqlite3`) en local
+- Neon Postgres (`@neondatabase/serverless`) en Vercel
+- `node-cron` en local + Vercel Cron en producción
 
 ---
 
@@ -56,9 +57,9 @@ Dashboard full-stack para monitorizar un portfolio crypto en tiempo real, con:
   - obtiene precios desde CoinGecko,
   - calcula valor, coste medio, PnL y métricas globales,
   - expone endpoints del frontend,
-  - guarda snapshots en SQLite.
+  - guarda snapshots en SQLite (local) o Postgres (Vercel).
 - `portfolio.db`:
-  - base local con tabla `snapshots` para histórico.
+  - base local de desarrollo con tabla `snapshots`.
 
 ---
 
@@ -102,6 +103,8 @@ Variables soportadas:
 
 ```dotenv
 SERVER_PORT=3001
+DATABASE_URL=postgres://...
+CRON_SECRET=your_random_secret
 BINGX_API_KEY=...
 BINGX_SECRET_KEY=...
 BITPANDA_API_KEY=...
@@ -149,6 +152,12 @@ Devuelve el estado completo del portfolio:
 ### `GET /api/history`
 Devuelve snapshots de `total_usd` ordenados por tiempo para la gráfica histórica.
 
+### `GET /api/snapshot`
+Genera y persiste un snapshot manualmente.
+
+- En Vercel se usa para ejecutar snapshots por cron.
+- Si existe `CRON_SECRET`, requiere header `Authorization: Bearer <CRON_SECRET>`.
+
 ---
 
 ## Persistencia y snapshots
@@ -165,9 +174,33 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 Comportamiento:
 
-- snapshot inicial si la tabla está vacía,
-- snapshot programado cada 10 minutos (cron),
-- histórico consumido por el gráfico de evolución.
+- Local:
+  - snapshot inicial si la tabla está vacía,
+  - snapshot cada 10 minutos con `node-cron`,
+  - persistencia en `portfolio.db`.
+- Vercel:
+  - persistencia en Postgres (`DATABASE_URL`),
+  - snapshots cada 10 minutos vía `vercel.json` + `/api/snapshot`,
+  - histórico durable entre ejecuciones serverless.
+
+---
+
+## Despliegue en Vercel (single deploy)
+
+1. Conecta el repo a Vercel.
+2. Añade integración de Postgres/Neon en el proyecto.
+3. Define variables en Vercel:
+   - `DATABASE_URL`
+   - `CRON_SECRET` (recomendado)
+   - `BINGX_API_KEY`
+   - `BINGX_SECRET_KEY`
+   - `BITPANDA_API_KEY`
+   - (opcionales) `BINGX_AVG_PRICE_*`, `BITPANDA_AVG_PRICE_*`
+4. Redeploy.
+5. Comprueba endpoints:
+   - `/api/balance`
+   - `/api/history`
+   - `/api/snapshot` (con token si usas `CRON_SECRET`)
 
 ---
 

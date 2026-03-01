@@ -224,7 +224,7 @@ const COINGECKO_IDS = {
 };
 
 const STABLECOINS = { 'USDT': { price: 1.0, change24h: 0 }, 'USDC': { price: 1.0, change24h: 0 }, 'DAI': { price: 1.0, change24h: 0 } };
-const IGNORED_TOKENS = ['VSN', 'USDC', 'USDT'];
+const IGNORED_TOKENS = ['VSN', 'USDC'];
 
 // ─── EUR/USD rate cache ────────────────────────────────────────
 const eurCache = { rate: null, lastFetch: 0, TTL: 300_000 };

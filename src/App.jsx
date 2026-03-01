@@ -86,6 +86,7 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [targetPrices, setTargetPrices] = useState({});
   const [isLightMode, setIsLightMode] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const authStorageKey = 'dashboard_auth_token';
 
   useEffect(() => {
@@ -95,6 +96,12 @@ const App = () => {
       document.body.classList.remove('light');
     }
   }, [isLightMode]);
+
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const getAuthToken = () => window.localStorage.getItem(authStorageKey);
   const getApiErrorMessage = (err, fallback) => {
@@ -276,26 +283,32 @@ const App = () => {
     percentage: tokenDistributionTotal > 0 ? (item.value / tokenDistributionTotal) * 100 : 0
   }));
   const simulatorExcludedCoins = new Set(['USDT']);
-  const MIN_DONUT_LABEL_PERCENT = 3;
+  const isMobile = windowWidth <= 768;
+  const isSmallMobile = windowWidth <= 480;
+  const MIN_DONUT_LABEL_PERCENT = isMobile ? 6 : 3;
   const formatPercent = (value) => `${value.toFixed(1)}%`;
+  const donutInnerRadius = isSmallMobile ? 46 : isMobile ? 54 : 60;
+  const donutOuterRadius = isSmallMobile ? 74 : isMobile ? 82 : 90;
+  const donutCy = isSmallMobile ? '58%' : '54%';
 
   const renderDistributionLabel = ({ cx, cy, midAngle, outerRadius, percent, fill }) => {
     const pct = percent * 100;
     if (pct < MIN_DONUT_LABEL_PERCENT) return null;
 
     const angle = (-midAngle * Math.PI) / 180;
-    const labelRadius = outerRadius + 12;
+    const labelRadius = outerRadius + (isSmallMobile ? 8 : isMobile ? 10 : 12);
     const x = cx + labelRadius * Math.cos(angle);
     const y = cy + labelRadius * Math.sin(angle);
+    const adjustedY = Math.max(y, isSmallMobile ? 18 : 14);
 
     return (
       <text
         x={x}
-        y={y}
+        y={adjustedY}
         fill={fill}
         textAnchor={x > cx ? 'start' : 'end'}
         dominantBaseline="central"
-        style={{ fontSize: '0.9rem', fontWeight: 700 }}
+        style={{ fontSize: isSmallMobile ? '0.78rem' : isMobile ? '0.82rem' : '0.9rem', fontWeight: 700 }}
       >
         {formatPercent(pct)}
       </text>
@@ -590,14 +603,14 @@ const App = () => {
 
             <div className="card chart-card donut-chart-card">
               <div className="stat-label" style={{ marginBottom: '1.5rem' }}>Distribución de Capital</div>
-              <ResponsiveContainer width="100%" height="80%">
-                <PieChart>
+              <ResponsiveContainer width="100%" height={isMobile ? '84%' : '80%'}>
+                <PieChart margin={isMobile ? { top: 20, right: 10, left: 10, bottom: 0 } : { top: 10, right: 10, left: 10, bottom: 0 }}>
                   <Pie
                     data={tokenChartData}
                     cx="50%"
-                    cy="54%"
-                    innerRadius={60}
-                    outerRadius={90}
+                    cy={donutCy}
+                    innerRadius={donutInnerRadius}
+                    outerRadius={donutOuterRadius}
                     paddingAngle={5}
                     dataKey="value"
                     labelLine={false}
@@ -613,7 +626,7 @@ const App = () => {
                     itemStyle={{ color: 'var(--text-main)', fontWeight: 600 }}
                   />
                   <Legend
-                    wrapperStyle={{ paddingTop: '16px', fontSize: '0.86rem' }}
+                    wrapperStyle={{ paddingTop: isMobile ? '10px' : '16px', fontSize: isMobile ? '0.8rem' : '0.86rem' }}
                     iconSize={11}
                     formatter={(value, entry) => `${value} (${formatPercent(entry?.payload?.percentage || 0)})`}
                   />

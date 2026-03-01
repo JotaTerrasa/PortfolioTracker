@@ -223,7 +223,26 @@ const COINGECKO_IDS = {
   'VSN': 'vision-network',
 };
 
-const STABLECOINS = { 'USDT': { price: 1.0, change24h: 0 }, 'USDC': { price: 1.0, change24h: 0 }, 'DAI': { price: 1.0, change24h: 0 } };
+const STABLECOINS = {
+  'USDT': {
+    price: 1.0,
+    change24h: 0,
+    icon: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
+    ath: 1.32
+  },
+  'USDC': {
+    price: 1.0,
+    change24h: 0,
+    icon: 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
+    ath: 2.17
+  },
+  'DAI': {
+    price: 1.0,
+    change24h: 0,
+    icon: 'https://assets.coingecko.com/coins/images/9956/large/Badge_Dai.png',
+    ath: 3.67
+  }
+};
 const IGNORED_TOKENS = ['VSN', 'USDC'];
 
 // ─── EUR/USD rate cache ────────────────────────────────────────

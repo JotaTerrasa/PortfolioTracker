@@ -275,6 +275,7 @@ const App = () => {
     ...item,
     percentage: tokenDistributionTotal > 0 ? (item.value / tokenDistributionTotal) * 100 : 0
   }));
+  const simulatorExcludedCoins = new Set(['USDT']);
   const MIN_DONUT_LABEL_PERCENT = 3;
   const formatPercent = (value) => `${value.toFixed(1)}%`;
 
@@ -359,7 +360,9 @@ const App = () => {
   }));
 
   // Consolidated Assets for Simulator
-  const consolidatedAssets = Object.keys(groupedTokens).map(coin => {
+  const consolidatedAssets = Object.keys(groupedTokens)
+  .filter(coin => !simulatorExcludedCoins.has(coin.toUpperCase()))
+  .map(coin => {
     const assets = allAssets.filter(a => a.coin === coin);
     const amount = assets.reduce((sum, a) => sum + a.amount, 0);
     const avgCost = globalBreakEven[coin] || (assets.find(a => a.avgCost)?.avgCost) || null;

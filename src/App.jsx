@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, LineChart, Line
+  Treemap, LineChart, Line
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw, AlertCircle, Database, History,
@@ -26,6 +26,7 @@ const fmtDateTime = (ts) => new Date(ts).toLocaleString([], {
   hour: '2-digit',
   minute: '2-digit'
 });
+const fmtSignedPct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
 
 const DualValue = ({ usd, rate, large, color }) => (
   <div>
@@ -281,50 +282,71 @@ const App = () => {
   ].sort((a, b) => b.value - a.value);
 
   const groupedTokens = allAssets.reduce((acc, curr) => {
-    acc[curr.coin] = (acc[curr.coin] || 0) + curr.value;
+    if (!acc[curr.coin]) {
+      acc[curr.coin] = { value: 0, weightedChange24h: 0 };
+    }
+    acc[curr.coin].value += curr.value;
+    acc[curr.coin].weightedChange24h += (curr.change24h || 0) * curr.value;
     return acc;
   }, {});
 
   const tokenDistributionData = Object.entries(groupedTokens)
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, stats]) => ({
+      name,
+      value: stats.value,
+      change24h: stats.value > 0 ? stats.weightedChange24h / stats.value : 0
+    }))
     .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
+    .slice(0, 18);
 
   const tokenDistributionTotal = tokenDistributionData.reduce((sum, item) => sum + item.value, 0);
-  const tokenChartData = tokenDistributionData.map((item) => ({
+  const tokenTreemapData = tokenDistributionData.map((item) => ({
     ...item,
     percentage: tokenDistributionTotal > 0 ? (item.value / tokenDistributionTotal) * 100 : 0
   }));
   const simulatorExcludedCoins = new Set(['USDT']);
   const isMobile = windowWidth <= 768;
-  const isSmallMobile = windowWidth <= 480;
-  const MIN_DONUT_LABEL_PERCENT = isMobile ? 6 : 3;
   const formatPercent = (value) => `${value.toFixed(1)}%`;
-  const donutInnerRadius = isSmallMobile ? 46 : isMobile ? 54 : 60;
-  const donutOuterRadius = isSmallMobile ? 74 : isMobile ? 82 : 90;
-  const donutCy = isSmallMobile ? '58%' : '54%';
+  const getTreemapColor = (change24h) => {
+    if (change24h >= 6) return '#15803d';
+    if (change24h >= 2) return '#16a34a';
+    if (change24h >= 0) return '#22c55e';
+    if (change24h >= -2) return '#f87171';
+    if (change24h >= -6) return '#ef4444';
+    return '#dc2626';
+  };
 
-  const renderDistributionLabel = ({ cx, cy, midAngle, outerRadius, percent, fill }) => {
-    const pct = percent * 100;
-    if (pct < MIN_DONUT_LABEL_PERCENT) return null;
-
-    const angle = (-midAngle * Math.PI) / 180;
-    const labelRadius = outerRadius + (isSmallMobile ? 8 : isMobile ? 10 : 12);
-    const x = cx + labelRadius * Math.cos(angle);
-    const y = cy + labelRadius * Math.sin(angle);
-    const adjustedY = Math.max(y, isSmallMobile ? 18 : 14);
+  const renderTreemapNode = ({ x, y, width, height, payload }) => {
+    if (!payload || width < 18 || height < 18) return null;
+    const fontSize = width > 130 && height > 80 ? 17 : width > 90 && height > 58 ? 13 : 11;
+    const showChange = width > 90 && height > 58;
+    const showValue = width > 125 && height > 75;
+    const textX = x + 10;
+    const textY = y + 24;
 
     return (
-      <text
-        x={x}
-        y={adjustedY}
-        fill={fill}
-        textAnchor={x > cx ? 'start' : 'end'}
-        dominantBaseline="central"
-        style={{ fontSize: isSmallMobile ? '0.78rem' : isMobile ? '0.82rem' : '0.9rem', fontWeight: 700 }}
-      >
-        {formatPercent(pct)}
-      </text>
+      <g>
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          style={{ fill: getTreemapColor(payload.change24h), stroke: 'rgba(255, 255, 255, 0.08)', strokeWidth: 1 }}
+        />
+        <text x={textX} y={textY} fill="#f8fafc" fontSize={fontSize} fontWeight={700}>
+          {payload.name}
+        </text>
+        {showChange && (
+          <text x={textX} y={textY + 20} fill="rgba(248, 250, 252, 0.95)" fontSize={Math.max(11, fontSize - 2)} fontWeight={600}>
+            {fmtSignedPct(payload.change24h)}
+          </text>
+        )}
+        {showValue && (
+          <text x={textX} y={textY + 38} fill="rgba(248, 250, 252, 0.9)" fontSize={Math.max(10, fontSize - 4)}>
+            {fmtUsd(payload.value)}
+          </text>
+        )}
+      </g>
     );
   };
 
@@ -682,34 +704,24 @@ const App = () => {
 
             <div className="card chart-card donut-chart-card">
               <div className="stat-label" style={{ marginBottom: '1.5rem' }}>Distribución de Capital</div>
-              <ResponsiveContainer width="100%" height={isMobile ? '84%' : '80%'}>
-                <PieChart margin={isMobile ? { top: 20, right: 10, left: 10, bottom: 0 } : { top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <Pie
-                    data={tokenChartData}
-                    cx="50%"
-                    cy={donutCy}
-                    innerRadius={donutInnerRadius}
-                    outerRadius={donutOuterRadius}
-                    paddingAngle={5}
-                    dataKey="value"
-                    labelLine={false}
-                    label={renderDistributionLabel}
-                  >
-                    {tokenChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
+              <ResponsiveContainer width="100%" height={isMobile ? '86%' : '82%'}>
+                <Treemap
+                  data={tokenTreemapData}
+                  dataKey="value"
+                  ratio={4 / 3}
+                  stroke="rgba(255,255,255,0.08)"
+                  isAnimationActive={false}
+                  content={renderTreemapNode}
+                >
                   <Tooltip
-                    formatter={(value, name, entry) => [`${fmtUsd(value)} (${formatPercent(entry?.payload?.percentage || 0)})`, name]}
+                    formatter={(value, name, entry) => [
+                      `${fmtUsd(value)} · ${formatPercent(entry?.payload?.percentage || 0)} · ${fmtSignedPct(entry?.payload?.change24h || 0)}`,
+                      name
+                    ]}
                     contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', backdropFilter: 'blur(10px)' }}
                     itemStyle={{ color: 'var(--text-main)', fontWeight: 600 }}
                   />
-                  <Legend
-                    wrapperStyle={{ paddingTop: isMobile ? '10px' : '16px', fontSize: isMobile ? '0.8rem' : '0.86rem' }}
-                    iconSize={11}
-                    formatter={(value, entry) => `${value} (${formatPercent(entry?.payload?.percentage || 0)})`}
-                  />
-                </PieChart>
+                </Treemap>
               </ResponsiveContainer>
             </div>
           </div>

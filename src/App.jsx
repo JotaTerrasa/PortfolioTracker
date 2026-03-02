@@ -387,7 +387,8 @@ const App = () => {
     ? historyWithTimestamp.filter(h => h.timestamp >= historyCutoff)
     : historyWithTimestamp;
 
-  const historyForChart = filteredHistory.length > 0 ? filteredHistory : historyWithTimestamp;
+  const historyForChart = filteredHistory;
+  const selectedRangeMs = historyRange === 'all' ? null : historyRangeMs[historyRange];
   const historyIntervals = historyForChart
     .slice(1)
     .map((h, idx) => h.timestamp - historyForChart[idx].timestamp)
@@ -399,6 +400,9 @@ const App = () => {
   const historyChartData = historyForChart;
   const historySpanMs = historyForChart.length > 1
     ? historyForChart[historyForChart.length - 1].timestamp - historyForChart[0].timestamp
+    : null;
+  const rangeCoveragePct = selectedRangeMs && historySpanMs
+    ? Math.min(100, Math.round((historySpanMs / selectedRangeMs) * 100))
     : null;
   const lastHistoryPoint = historyForChart[historyForChart.length - 1] || null;
   const hasSparseHistory = historyForChart.length < 2;
@@ -620,8 +624,14 @@ const App = () => {
                   {historyForChart.length} muestras
                   {historySpanMs ? ` · cobertura ${fmtDurationCompact(historySpanMs)}` : ''}
                   {medianIntervalMs ? ` · intervalo mediano ${fmtDurationCompact(medianIntervalMs)}` : ''}
+                  {rangeCoveragePct !== null ? ` · ${rangeCoveragePct}% del rango` : ''}
                   {lastHistoryPoint ? ` · último: ${fmtDateTime(lastHistoryPoint.timestamp)}` : ''}
                 </div>
+                {historyForChart.length === 0 && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', width: '100%' }}>
+                    No hay snapshots dentro de este rango todavía.
+                  </div>
+                )}
                 {hasSparseHistory && (
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', width: '100%' }}>
                     Muy pocos snapshots en este rango. El gráfico mejora automáticamente conforme se guardan más muestras.

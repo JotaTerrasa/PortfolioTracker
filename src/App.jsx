@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, AreaChart, Area
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, LineChart, Line
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw, AlertCircle, Database, History,
@@ -19,6 +19,13 @@ const fmtDurationCompact = (ms) => {
   if (ms < 24 * 60 * 60 * 1000) return `${Math.round(ms / (60 * 60 * 1000))}h`;
   return `${Math.round(ms / (24 * 60 * 60 * 1000))}d`;
 };
+const fmtDateTime = (ts) => new Date(ts).toLocaleString([], {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+});
 
 const DualValue = ({ usd, rate, large, color }) => (
   <div>
@@ -381,13 +388,6 @@ const App = () => {
     : historyWithTimestamp;
 
   const historyForChart = filteredHistory.length > 0 ? filteredHistory : historyWithTimestamp;
-  const historyGapConfig = {
-    '24h': { multiplier: 2.5, minMs: 30 * 60 * 1000 },
-    '7d': { multiplier: 3, minMs: 2 * 60 * 60 * 1000 },
-    '30d': { multiplier: 4, minMs: 4 * 60 * 60 * 1000 },
-    'all': { multiplier: 5, minMs: 6 * 60 * 60 * 1000 }
-  };
-  const selectedGapConfig = historyGapConfig[historyRange] || historyGapConfig.all;
   const historyIntervals = historyForChart
     .slice(1)
     .map((h, idx) => h.timestamp - historyForChart[idx].timestamp)
@@ -396,35 +396,23 @@ const App = () => {
   const medianIntervalMs = sortedIntervals.length
     ? sortedIntervals[Math.floor(sortedIntervals.length / 2)]
     : null;
-  const gapThresholdMs = medianIntervalMs
-    ? Math.max(medianIntervalMs * selectedGapConfig.multiplier, selectedGapConfig.minMs)
-    : selectedGapConfig.minMs;
-  const hasIrregularGaps = Boolean(
-    gapThresholdMs && historyIntervals.some(interval => interval > gapThresholdMs)
-  );
-
-  const historyChartData = historyForChart.reduce((acc, point, idx) => {
-    acc.push(point);
-    if (!gapThresholdMs || idx === historyForChart.length - 1) return acc;
-
-    const nextPoint = historyForChart[idx + 1];
-    const gap = nextPoint.timestamp - point.timestamp;
-    if (gap > gapThresholdMs) {
-      acc.push({
-        timestamp: point.timestamp + Math.floor(gap / 2),
-        fullTime: '',
-        value: null,
-        isGap: true
-      });
-    }
-
-    return acc;
-  }, []);
+  const historyChartData = historyForChart;
+  const historySpanMs = historyForChart.length > 1
+    ? historyForChart[historyForChart.length - 1].timestamp - historyForChart[0].timestamp
+    : null;
+  const lastHistoryPoint = historyForChart[historyForChart.length - 1] || null;
+  const hasSparseHistory = historyForChart.length < 2;
+  const historyValues = historyForChart.map(p => p.value).filter(v => Number.isFinite(v));
+  const yMin = historyValues.length ? Math.min(...historyValues) : 0;
+  const yMax = historyValues.length ? Math.max(...historyValues) : 0;
+  const ySpread = yMax - yMin;
+  const yPadding = ySpread > 0 ? ySpread * 0.14 : Math.max(10, yMax * 0.015 || 10);
+  const historyYDomain = [Math.max(0, yMin - yPadding), yMax + yPadding];
 
   const formatHistoryTick = (timestamp) => {
     const date = new Date(timestamp);
     if (historyRange === '24h') return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (historyRange === '7d') return date.toLocaleDateString([], { weekday: 'short', day: '2-digit' });
+    if (historyRange === '7d') return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
     return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
   };
 
@@ -630,18 +618,18 @@ const App = () => {
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', width: '100%' }}>
                   {historyForChart.length} muestras
-                  {medianIntervalMs ? ` · aprox. cada ${fmtDurationCompact(medianIntervalMs)}` : ''}
-                  {hasIrregularGaps ? ' · con huecos de datos' : ''}
+                  {historySpanMs ? ` · cobertura ${fmtDurationCompact(historySpanMs)}` : ''}
+                  {medianIntervalMs ? ` · intervalo mediano ${fmtDurationCompact(medianIntervalMs)}` : ''}
+                  {lastHistoryPoint ? ` · último: ${fmtDateTime(lastHistoryPoint.timestamp)}` : ''}
                 </div>
+                {hasSparseHistory && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', width: '100%' }}>
+                    Muy pocos snapshots en este rango. El gráfico mejora automáticamente conforme se guardan más muestras.
+                  </div>
+                )}
               </div>
               <ResponsiveContainer width="100%" height="80%">
-                <AreaChart data={historyChartData}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+                <LineChart data={historyChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis
                     dataKey="timestamp"
@@ -652,12 +640,14 @@ const App = () => {
                     fontSize={11}
                     tickMargin={10}
                     tickFormatter={formatHistoryTick}
+                    tickCount={6}
                     minTickGap={28}
+                    interval="preserveStartEnd"
                   />
                   <YAxis
                     stroke="rgba(148, 163, 184, 0.9)"
                     tick={{ fill: 'rgba(148, 163, 184, 0.95)', fontSize: 11 }}
-                    domain={['auto', 'auto']}
+                    domain={historyYDomain}
                     tickFormatter={(v) => `$${Math.round(v).toLocaleString()}`}
                   />
                   <Tooltip
@@ -665,21 +655,18 @@ const App = () => {
                     itemStyle={{ color: 'var(--text-main)' }}
                     labelStyle={{ color: 'var(--text-muted)', marginBottom: '8px' }}
                     formatter={(value) => [fmtUsd(value), 'Valor Portfolio']}
-                    labelFormatter={(label) => new Date(label).toLocaleString()}
+                    labelFormatter={(label) => fmtDateTime(label)}
                   />
-                  <Area
-                    type="linear"
+                  <Line
+                    type="monotoneX"
                     dataKey="value"
                     stroke="#6366f1"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorValue)"
-                    connectNulls={false}
-                    dot={historyForChart.length <= 120 ? { r: 2.5, strokeWidth: 0, fill: '#818cf8' } : false}
+                    strokeWidth={2.8}
+                    dot={{ r: 3, strokeWidth: 0, fill: '#818cf8' }}
                     activeDot={{ r: 4, strokeWidth: 0, fill: '#c7d2fe' }}
                     isAnimationActive={false}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
 

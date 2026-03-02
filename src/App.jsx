@@ -316,8 +316,8 @@ const App = () => {
     return '#dc2626';
   };
 
-  const renderTreemapNode = ({ x, y, width, height, payload }) => {
-    if (!payload || width < 18 || height < 18) return null;
+  const renderTreemapNode = ({ x, y, width, height, name, value, change24h, depth }) => {
+    if (depth !== 1 || width < 18 || height < 18) return null;
     const fontSize = width > 130 && height > 80 ? 17 : width > 90 && height > 58 ? 13 : 11;
     const showChange = width > 90 && height > 58;
     const showValue = width > 125 && height > 75;
@@ -331,19 +331,19 @@ const App = () => {
           y={y}
           width={width}
           height={height}
-          style={{ fill: getTreemapColor(payload.change24h), stroke: 'rgba(255, 255, 255, 0.08)', strokeWidth: 1 }}
+          style={{ fill: getTreemapColor(change24h || 0), stroke: 'rgba(255, 255, 255, 0.08)', strokeWidth: 1 }}
         />
         <text x={textX} y={textY} fill="#f8fafc" fontSize={fontSize} fontWeight={700}>
-          {payload.name}
+          {name}
         </text>
         {showChange && (
           <text x={textX} y={textY + 20} fill="rgba(248, 250, 252, 0.95)" fontSize={Math.max(11, fontSize - 2)} fontWeight={600}>
-            {fmtSignedPct(payload.change24h)}
+            {fmtSignedPct(change24h || 0)}
           </text>
         )}
         {showValue && (
           <text x={textX} y={textY + 38} fill="rgba(248, 250, 252, 0.9)" fontSize={Math.max(10, fontSize - 4)}>
-            {fmtUsd(payload.value)}
+            {fmtUsd(value || 0)}
           </text>
         )}
       </g>

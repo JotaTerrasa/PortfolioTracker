@@ -26,6 +26,8 @@ const authSecret = process.env.AUTH_SECRET || dashboardPassword || 'dev-fallback
 const loginMaxAttempts = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const loginWindowMs = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000);
 const loginBlockMs = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+const usageSnapshotCooldownMinutes = Math.max(5, Number(process.env.AUTO_SNAPSHOT_COOLDOWN_MINUTES || 60));
+const usageSnapshotCooldownMs = usageSnapshotCooldownMinutes * 60 * 1000;
 const loginAttempts = new Map();
 
 app.use(cors());
@@ -196,6 +198,28 @@ async function getSnapshotCount() {
     db.get('SELECT COUNT(*) as count FROM snapshots', (err, row) => {
       if (err) reject(err);
       else resolve(row?.count || 0);
+    });
+  });
+}
+
+async function getLatestSnapshotTimestamp() {
+  if (isVercel) {
+    const ready = await ensureSnapshotsTable();
+    if (!ready) return null;
+    const rows = await pgSql`SELECT MAX(timestamp) AS last_ts FROM snapshots`;
+    const raw = rows[0]?.last_ts;
+    const ts = raw ? new Date(raw).getTime() : null;
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  return await new Promise((resolve, reject) => {
+    db.get('SELECT MAX(timestamp) as last_ts FROM snapshots', (err, row) => {
+      if (err) reject(err);
+      else {
+        const raw = row?.last_ts;
+        const ts = raw ? new Date(raw).getTime() : null;
+        resolve(Number.isFinite(ts) ? ts : null);
+      }
     });
   });
 }
@@ -437,6 +461,27 @@ const saveSnapshot = async () => {
   return false;
 };
 
+const maybeSaveUsageSnapshot = async (totalUsd) => {
+  if (!isVercel) return false;
+  if (!Number.isFinite(totalUsd) || totalUsd <= 0) return false;
+
+  try {
+    const lastSnapshotTs = await getLatestSnapshotTimestamp();
+    if (lastSnapshotTs && Date.now() - lastSnapshotTs < usageSnapshotCooldownMs) {
+      return false;
+    }
+
+    const inserted = await insertSnapshot(totalUsd);
+    if (inserted) {
+      console.log(`[Snapshot] Usage snapshot saved (${usageSnapshotCooldownMinutes}m cooldown).`);
+    }
+    return inserted;
+  } catch (err) {
+    console.error('[Snapshot] Usage snapshot skipped:', err.message);
+    return false;
+  }
+};
+
 if (!isVercel) {
   // In development, save every 10 minutes for quick testing. Real usage: maybe every hour.
   cron.schedule('*/10 * * * *', saveSnapshot);
@@ -633,6 +678,7 @@ const handleBalance = async (req, res) => {
     });
 
     balances.eur_rate = await getEurRate();
+    await maybeSaveUsageSnapshot(balances.total_usd);
     res.json(balances);
   } catch (error) {
     res.status(500).json({ error: error.message });

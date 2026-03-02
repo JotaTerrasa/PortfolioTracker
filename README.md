@@ -110,6 +110,7 @@ AUTH_SECRET=your_auth_signing_secret
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_WINDOW_MS=600000
 LOGIN_BLOCK_MS=900000
+AUTO_SNAPSHOT_COOLDOWN_MINUTES=60
 BINGX_API_KEY=...
 BINGX_SECRET_KEY=...
 BITPANDA_API_KEY=...
@@ -217,7 +218,8 @@ Comportamiento:
   - persistencia en `portfolio.db`.
 - Vercel:
   - persistencia en Postgres (`DATABASE_URL`),
-  - snapshots cada 10 minutos vía `vercel.json` + `/api/snapshot`,
+  - snapshot por cron según `vercel.json` (por defecto en este repo: 1/día),
+  - snapshots adicionales por uso del dashboard (`/api/balance`) con cooldown configurable (`AUTO_SNAPSHOT_COOLDOWN_MINUTES`, por defecto 60 min),
   - histórico durable entre ejecuciones serverless.
 
 ---

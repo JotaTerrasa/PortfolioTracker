@@ -2,6 +2,11 @@ import crypto from 'crypto';
 import { authConfig, loginBlockMs, loginMaxAttempts, loginWindowMs } from '../config/env.js';
 
 const loginAttempts = new Map();
+let authConfigOverride = null;
+
+function getAuthConfig() {
+  return authConfigOverride || authConfig;
+}
 
 export const parseBearerToken = (authHeader = '') => {
   if (!authHeader.startsWith('Bearer ')) return null;
@@ -14,12 +19,14 @@ const b64url = {
 };
 
 function signAuthPayload(payload) {
-  if (!authConfig.secret) return null;
-  return crypto.createHmac('sha256', authConfig.secret).update(payload).digest('base64url');
+  const currentAuthConfig = getAuthConfig();
+  if (!currentAuthConfig.secret) return null;
+  return crypto.createHmac('sha256', currentAuthConfig.secret).update(payload).digest('base64url');
 }
 
 export function createAuthToken() {
-  const signatureSecret = authConfig.secret;
+  const currentAuthConfig = getAuthConfig();
+  const signatureSecret = currentAuthConfig.secret;
   if (!signatureSecret) return null;
   const payload = JSON.stringify({ exp: Date.now() + (1000 * 60 * 60 * 24) });
   const payloadB64 = b64url.encode(payload);
@@ -64,7 +71,8 @@ export const getActiveLoginBlock = (ip) => {
 };
 
 export function verifyAuthToken(token) {
-  if (!token || !authConfig.secret) return false;
+  const currentAuthConfig = getAuthConfig();
+  if (!token || !currentAuthConfig.secret) return false;
   const [payloadB64, signature] = token.split('.');
   if (!payloadB64 || !signature) return false;
 
@@ -80,7 +88,8 @@ export function verifyAuthToken(token) {
 }
 
 export function requireDashboardAuth(req, res, next) {
-  if (!authConfig.enabled) return next();
+  const currentAuthConfig = getAuthConfig();
+  if (!currentAuthConfig.enabled) return next();
   const reqPath = req.path || '';
   if (reqPath.startsWith('/auth/')) return next();
   if (reqPath === '/snapshot') return next();
@@ -94,4 +103,12 @@ export function requireDashboardAuth(req, res, next) {
 
 export function clearLoginAttempts(ip) {
   loginAttempts.delete(ip);
+}
+
+export function setAuthConfigForTests(config) {
+  authConfigOverride = config;
+}
+
+export function resetAuthConfigForTests() {
+  authConfigOverride = null;
 }

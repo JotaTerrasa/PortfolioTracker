@@ -140,7 +140,7 @@ BITPANDA_AVG_PRICE_ASTER=1.85
 - `npm run build`: build de producción frontend.
 - `npm run preview`: preview local del build.
 - `npm run lint`: lint del proyecto.
-- `npm run test`: tests rápidos de utilidades críticas.
+- `npm run test`: tests rápidos de utilidades críticas y auth backend.
 
 ---
 

@@ -106,7 +106,8 @@ SERVER_PORT=3001
 DATABASE_URL=postgres://...
 CRON_SECRET=your_random_secret
 DASHBOARD_PASSWORD=your_dashboard_password
-AUTH_SECRET=your_auth_signing_secret
+AUTH_SECRET=your_auth_signing_secret_at_least_32_chars
+CORS_ALLOWLIST=https://portfolio.example.com
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_WINDOW_MS=600000
 LOGIN_BLOCK_MS=900000
@@ -158,11 +159,13 @@ Devuelve el estado completo del portfolio:
 ### `GET /api/history`
 Devuelve snapshots de `total_usd` ordenados por tiempo para la gráfica histórica.
 
-### `GET /api/snapshot`
+### `POST /api/snapshot`
 Genera y persiste un snapshot manualmente.
 
+- Es la ruta primaria para crear snapshots.
 - En Vercel se usa para ejecutar snapshots por cron.
 - Si existe `CRON_SECRET`, requiere header `Authorization: Bearer <CRON_SECRET>`.
+- `GET /api/snapshot` se mantiene temporalmente por compatibilidad.
 
 ### `GET /api/auth/status`
 Devuelve estado de autenticación del dashboard:
@@ -232,7 +235,8 @@ Comportamiento:
    - `DATABASE_URL`
    - `CRON_SECRET` (recomendado)
    - `DASHBOARD_PASSWORD` (opcional, activa login del dashboard)
-   - `AUTH_SECRET` (recomendado si usas auth)
+   - `AUTH_SECRET` (**obligatorio si usas auth en producción**, usa un secreto aleatorio largo)
+   - `CORS_ALLOWLIST` (recomendado en producción, lista separada por comas)
    - `LOGIN_MAX_ATTEMPTS` (opcional)
    - `LOGIN_WINDOW_MS` (opcional)
    - `LOGIN_BLOCK_MS` (opcional)
@@ -290,6 +294,8 @@ Además:
 - Nunca subas `.env` al repositorio.
 - Usa claves con permisos mínimos de lectura cuando sea posible.
 - Si una clave se expuso, regénérala inmediatamente.
+- Si activas `DASHBOARD_PASSWORD` en producción, configura también `AUTH_SECRET` con al menos 32 caracteres aleatorios; sin eso el login queda deshabilitado por seguridad.
+- Restringe `CORS_ALLOWLIST` a tus dominios reales en producción.
 - Evita logs con datos sensibles (API keys, balances detallados en producción).
 
 ---

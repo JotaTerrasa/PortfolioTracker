@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Treemap, LineChart, Line
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw, AlertCircle, Database, History,
-  ArrowUp, ArrowDown, LayoutDashboard, Rocket, Target, Moon, Sun, ShieldCheck
+  ArrowUp, ArrowDown, LayoutDashboard, Rocket, Target, Moon, Sun
 } from 'lucide-react';
 import axios from 'axios';
+import LoginScreen from './components/LoginScreen';
+import { useDashboardAuth } from './hooks/useDashboardAuth';
 
 const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981'];
 
@@ -117,51 +119,13 @@ const App = () => {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const getAuthToken = () => window.localStorage.getItem(authStorageKey);
-  const getApiErrorMessage = (err, fallback) => {
-    const raw = err?.response?.data?.error;
-    if (typeof raw === 'string') return raw;
-    if (raw && typeof raw === 'object') {
-      if (typeof raw.message === 'string') return raw.message;
-      return JSON.stringify(raw);
-    }
-    return fallback;
-  };
-  const getAuthHeaders = () => {
-    const token = getAuthToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
+  const { getApiErrorMessage, getAuthHeaders, requestAuthEndpoint, checkAuthStatus } = useDashboardAuth({
+    authStorageKey,
+    setAuthEnabled,
+    setIsAuthenticated,
+  });
 
-  const requestAuthEndpoint = async ({ method, path, data, headers }) => {
-    try {
-      return await axios({ method, url: `/api${path}`, data, headers });
-    } catch (err) {
-      if (err?.response?.status === 404) {
-        return axios({ method, url: path, data, headers });
-      }
-      throw err;
-    }
-  };
-
-  const checkAuthStatus = async () => {
-    try {
-      const statusRes = await requestAuthEndpoint({
-        method: 'get',
-        path: '/auth/status',
-        headers: getAuthHeaders()
-      });
-      setAuthEnabled(Boolean(statusRes.data?.enabled));
-      setIsAuthenticated(Boolean(statusRes.data?.authenticated));
-      return statusRes.data;
-    } catch {
-      // Backward compatibility in case auth endpoint is not available
-      setAuthEnabled(false);
-      setIsAuthenticated(true);
-      return { enabled: false, authenticated: true };
-    }
-  };
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [balanceRes, historyRes] = await Promise.all([
@@ -186,7 +150,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [authStorageKey, getAuthHeaders]);
 
   useEffect(() => {
     let interval;
@@ -202,7 +166,7 @@ const App = () => {
 
     init();
     return () => clearInterval(interval);
-  }, []);
+  }, [checkAuthStatus, fetchData]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -235,33 +199,13 @@ const App = () => {
 
   if (authEnabled && !isAuthenticated && !loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
-        <div className="card" style={{ width: '100%', maxWidth: '420px' }}>
-          <div className="stat-label" style={{ marginBottom: '1rem' }}>
-            <ShieldCheck size={18} /> Acceso Privado
-          </div>
-          <h2 style={{ marginBottom: '0.5rem' }}>Iniciar sesión</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
-            Este dashboard requiere contraseña.
-          </p>
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <input
-              type="password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              placeholder="Contraseña del dashboard"
-              className="sim-input"
-              style={{ width: '100%' }}
-              autoFocus
-              required
-            />
-            {loginError && <div style={{ color: '#f43f5e', fontSize: '0.85rem' }}>{loginError}</div>}
-            <button type="submit" className="refresh-button" style={{ justifyContent: 'center' }} disabled={loading}>
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
-          </form>
-        </div>
-      </div>
+      <LoginScreen
+        loginPassword={loginPassword}
+        setLoginPassword={setLoginPassword}
+        loginError={loginError}
+        loading={loading}
+        handleLogin={handleLogin}
+      />
     );
   }
 

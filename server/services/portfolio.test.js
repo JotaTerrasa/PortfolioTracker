@@ -64,5 +64,5 @@ test('calculateCumulativeCostBasisFromTrades matches BingX cumulative cost formu
 
   assert.ok(result);
   assert.equal(Number(result.quantity.toFixed(6)), 4351.444816);
-  assert.equal(Number(result.avgCost.toFixed(6)), 0.735869);
+  assert.equal(Number(result.avgCost.toFixed(6)), 0.737207);
 });

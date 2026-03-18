@@ -7,6 +7,105 @@ function hasValue(amount) {
   return Number(amount) > 0;
 }
 
+function safeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getTradeNetBaseAmount(trade) {
+  const amount = safeNumber(trade.amount);
+  const fee = safeNumber(trade.fee?.cost);
+  const feeCurrency = trade.fee?.currency?.toUpperCase?.() || null;
+  const baseCoin = trade.symbol?.split('/')?.[0]?.toUpperCase?.() || null;
+
+  if (trade.side === 'buy' && fee > 0 && feeCurrency && baseCoin && feeCurrency === baseCoin) {
+    return Math.max(0, amount - fee);
+  }
+
+  return amount;
+}
+
+export function calculateRemainingCostBasisFromTrades(trades) {
+  let quantity = 0;
+  let invested = 0;
+
+  const orderedTrades = [...trades]
+    .filter((trade) => trade && (trade.side === 'buy' || trade.side === 'sell'))
+    .sort((a, b) => safeNumber(a.timestamp) - safeNumber(b.timestamp));
+
+  for (const trade of orderedTrades) {
+    const amount = getTradeNetBaseAmount(trade);
+    const cost = safeNumber(trade.cost, amount * safeNumber(trade.price));
+
+    if (amount <= 0) continue;
+
+    if (trade.side === 'buy') {
+      quantity += amount;
+      invested += cost;
+      continue;
+    }
+
+    if (quantity <= 0) continue;
+
+    const amountToRemove = Math.min(amount, quantity);
+    const avgCost = invested / quantity;
+    quantity -= amountToRemove;
+    invested -= avgCost * amountToRemove;
+
+    if (quantity <= 1e-12) {
+      quantity = 0;
+      invested = 0;
+    }
+  }
+
+  if (quantity <= 0 || invested <= 0) return null;
+
+  return {
+    quantity,
+    totalInvested: invested,
+    avgCost: invested / quantity,
+  };
+}
+
+function applyManualCostOverrides(costBasis, assets, exchangePrefix, envPrefix) {
+  for (const asset of assets) {
+    const symbol = asset.coin.toUpperCase();
+    const key = `${exchangePrefix}${asset.coin}`;
+    const manualTotal = safeNumber(process.env[`${envPrefix}_COST_${symbol}`]);
+    const manualAvg = safeNumber(process.env[`${envPrefix}_AVG_PRICE_${symbol}`]);
+
+    if (costBasis[key]) continue;
+
+    if (manualAvg > 0) {
+      costBasis[key] = { avgCost: manualAvg, totalInvested: manualAvg * asset.amount, source: 'manual_avg' };
+    } else if (manualTotal > 0 && asset.amount > 0) {
+      costBasis[key] = { avgCost: manualTotal / asset.amount, totalInvested: manualTotal, source: 'manual_total' };
+    }
+  }
+}
+
+async function fetchBingxTradesForSymbol(client, coin) {
+  const symbol = `${coin}/USDT`;
+  const collected = [];
+  const pageLimit = 1000;
+  let since = undefined;
+
+  for (let page = 0; page < 10; page += 1) {
+    const batch = await client.fetchMyTrades(symbol, since, pageLimit);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    collected.push(...batch);
+
+    const lastTimestamp = safeNumber(batch[batch.length - 1]?.timestamp);
+    if (!lastTimestamp || batch.length < pageLimit) break;
+    since = lastTimestamp + 1;
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return collected;
+}
+
 async function loadBingxAssets() {
   if (!(process.env.BINGX_API_KEY && process.env.BINGX_SECRET_KEY)) {
     return { client: null, assets: [] };
@@ -60,24 +159,18 @@ async function buildPriceMap(symbols, bingxClient) {
 
 async function buildCostBasis(balances, bingxClient) {
   const costBasis = {};
-  const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
 
   if (bingxClient) {
     for (const asset of balances.bingx) {
       try {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const trades = await bingxClient.fetchMyTrades(`${asset.coin}/USDT`, oneYearAgo, 1000);
-        let totalBought = 0;
-        let totalCost = 0;
-        trades.forEach((trade) => {
-          if (trade.side === 'buy') {
-            totalBought += trade.amount;
-            totalCost += trade.cost;
-          }
-        });
-        if (totalBought > 0) {
-          const avg = totalCost / totalBought;
-          costBasis[asset.coin] = { avgCost: avg, totalInvested: avg * asset.amount };
+        const trades = await fetchBingxTradesForSymbol(bingxClient, asset.coin);
+        const computed = calculateRemainingCostBasisFromTrades(trades);
+        if (computed && computed.avgCost > 0) {
+          costBasis[asset.coin] = {
+            avgCost: computed.avgCost,
+            totalInvested: computed.avgCost * asset.amount,
+            source: 'bingx_trades',
+          };
         }
       } catch {
         // Ignore per-asset trade history failures and keep response flowing.
@@ -99,28 +192,33 @@ async function buildCostBasis(balances, bingxClient) {
         if (allBpTrades.length > 5000) break;
       }
 
-      const bpStats = {};
+      const groupedTrades = {};
       allBpTrades.forEach((trade) => {
-        const attrs = trade.attributes;
-        if (attrs.status === 'finished' && attrs.type === 'buy') {
-          const symbol = attrs.cryptocoin_symbol;
-          if (IGNORED_TOKENS.includes(symbol.toUpperCase())) return;
-          if (!bpStats[symbol]) bpStats[symbol] = { tb: 0, tc: 0 };
-          const amount = parseFloat(attrs.amount_cryptocoin);
-          const cost = parseFloat(attrs.amount_fiat) || (amount * parseFloat(attrs.price));
-          bpStats[symbol].tb += amount;
-          bpStats[symbol].tc += cost;
-        }
+        const attrs = trade.attributes || {};
+        const symbol = attrs.cryptocoin_symbol;
+        if (!symbol || IGNORED_TOKENS.includes(symbol.toUpperCase())) return;
+        if (attrs.status !== 'finished') return;
+        if (attrs.type !== 'buy' && attrs.type !== 'sell') return;
+
+        if (!groupedTrades[symbol]) groupedTrades[symbol] = [];
+        groupedTrades[symbol].push({
+          side: attrs.type,
+          timestamp: Date.parse(attrs.time?.completed_at || attrs.time?.created_at || trade.id || 0),
+          amount: safeNumber(attrs.amount_cryptocoin),
+          cost: safeNumber(attrs.amount_fiat) || (safeNumber(attrs.amount_cryptocoin) * safeNumber(attrs.price)),
+          price: safeNumber(attrs.price),
+          fee: null,
+        });
       });
 
-      Object.keys(bpStats).forEach((symbol) => {
-        const stats = bpStats[symbol];
-        if (stats.tb > 0) {
-          const assetMatch = balances.bitpanda.find((asset) => asset.coin === symbol);
-          const amount = assetMatch ? assetMatch.amount : 0;
+      Object.entries(groupedTrades).forEach(([symbol, trades]) => {
+        const computed = calculateRemainingCostBasisFromTrades(trades);
+        const assetMatch = balances.bitpanda.find((asset) => asset.coin === symbol);
+        if (computed && computed.avgCost > 0 && assetMatch) {
           costBasis[`bp_${symbol}`] = {
-            avgCost: stats.tc / stats.tb,
-            totalInvested: (stats.tc / stats.tb) * amount,
+            avgCost: computed.avgCost,
+            totalInvested: computed.avgCost * assetMatch.amount,
+            source: 'bitpanda_trades',
           };
         }
       });
@@ -129,29 +227,8 @@ async function buildCostBasis(balances, bingxClient) {
     }
   }
 
-  for (const asset of balances.bitpanda) {
-    const symbol = asset.coin.toUpperCase();
-    const manualTotal = parseFloat(process.env[`BITPANDA_COST_${symbol}`]);
-    const manualAvg = parseFloat(process.env[`BITPANDA_AVG_PRICE_${symbol}`]);
-
-    if (manualAvg > 0) {
-      costBasis[`bp_${asset.coin}`] = { avgCost: manualAvg, totalInvested: manualAvg * asset.amount };
-    } else if (manualTotal > 0) {
-      costBasis[`bp_${asset.coin}`] = { avgCost: manualTotal / asset.amount, totalInvested: manualTotal };
-    }
-  }
-
-  for (const asset of balances.bingx) {
-    const symbol = asset.coin.toUpperCase();
-    const manualTotal = parseFloat(process.env[`BINGX_COST_${symbol}`]);
-    const manualAvg = parseFloat(process.env[`BINGX_AVG_PRICE_${symbol}`]);
-
-    if (manualAvg > 0) {
-      costBasis[asset.coin] = { avgCost: manualAvg, totalInvested: manualAvg * asset.amount };
-    } else if (manualTotal > 0) {
-      costBasis[asset.coin] = { avgCost: manualTotal / asset.amount, totalInvested: manualTotal };
-    }
-  }
+  applyManualCostOverrides(costBasis, balances.bitpanda, 'bp_', 'BITPANDA');
+  applyManualCostOverrides(costBasis, balances.bingx, '', 'BINGX');
 
   return costBasis;
 }
@@ -204,6 +281,7 @@ export async function getPortfolioSnapshot() {
       invested,
       pnl,
       pnlPct: cost && invested > 0 ? (pnl / invested) * 100 : null,
+      costBasisSource: cost?.source || null,
     };
   });
 
@@ -227,6 +305,7 @@ export async function getPortfolioSnapshot() {
       invested,
       pnl,
       pnlPct: cost && invested > 0 ? (pnl / invested) * 100 : null,
+      costBasisSource: cost?.source || null,
     };
   });
 

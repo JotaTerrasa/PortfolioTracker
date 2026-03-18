@@ -1,6 +1,6 @@
 import React from 'react';
 import { Rocket } from 'lucide-react';
-import { COLORS, fmtEur, fmtUsd } from '../lib/portfolioMath';
+import { COLORS, fmtEur, fmtNativeCurrency, fmtUsd } from '../lib/portfolioMath';
 
 const SimulatorTab = ({ consolidatedAssets, targetPrices, handleTargetChange, eurRate, simTotalProjected, simTotalProfit, simTotalCostBase, simTaxUsd, simTotalNetPocketUsd, simNetUsd }) => {
   return (
@@ -48,7 +48,10 @@ const SimulatorTab = ({ consolidatedAssets, targetPrices, handleTargetChange, eu
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} tokens</div>
                         {asset.avgCost && asset.amount > 0 && (
                           <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '0.2rem', fontWeight: 600 }}>
-                            Inv: {fmtUsd(asset.avgCost * asset.amount)} | {fmtEur(asset.avgCost * asset.amount, eurRate)}
+                            Inv: {fmtUsd(asset.avgCost * asset.amount)}
+                            {asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT'
+                              ? ` | ${fmtNativeCurrency((asset.avgCostNative || 0) * asset.amount, asset.avgCostCurrency, eurRate)}`
+                              : ` | ${fmtEur(asset.avgCost * asset.amount, eurRate)}`}
                           </div>
                         )}
                       </div>
@@ -58,7 +61,11 @@ const SimulatorTab = ({ consolidatedAssets, targetPrices, handleTargetChange, eu
                     {asset.avgCost ? (
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{fmtUsd(asset.avgCost)}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{fmtEur(asset.avgCost, eurRate)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT'
+                            ? fmtNativeCurrency(asset.avgCostNative, asset.avgCostCurrency, eurRate)
+                            : fmtEur(asset.avgCost, eurRate)}
+                        </div>
                       </div>
                     ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>N/A</span>}
                   </td>

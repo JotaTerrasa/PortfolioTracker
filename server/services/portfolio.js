@@ -67,7 +67,20 @@ export function calculateRemainingCostBasisFromTrades(trades) {
   };
 }
 
-function applyManualCostOverrides(costBasis, assets, exchangePrefix, envPrefix) {
+function buildCostBasisEntry({ avgCost, totalInvested, source, nativeCurrency = 'USD', usdPerNative = 1 }) {
+  const safeUsdPerNative = usdPerNative > 0 ? usdPerNative : 1;
+  return {
+    avgCostNative: avgCost,
+    totalInvestedNative: totalInvested,
+    nativeCurrency,
+    usdPerNative: safeUsdPerNative,
+    avgCostUsd: avgCost * safeUsdPerNative,
+    totalInvestedUsd: totalInvested * safeUsdPerNative,
+    source,
+  };
+}
+
+function applyManualCostOverrides(costBasis, assets, exchangePrefix, envPrefix, nativeCurrency, usdPerNative) {
   for (const asset of assets) {
     const symbol = asset.coin.toUpperCase();
     const key = `${exchangePrefix}${asset.coin}`;
@@ -77,9 +90,21 @@ function applyManualCostOverrides(costBasis, assets, exchangePrefix, envPrefix) 
     if (costBasis[key]) continue;
 
     if (manualAvg > 0) {
-      costBasis[key] = { avgCost: manualAvg, totalInvested: manualAvg * asset.amount, source: 'manual_avg' };
+      costBasis[key] = buildCostBasisEntry({
+        avgCost: manualAvg,
+        totalInvested: manualAvg * asset.amount,
+        source: 'manual_avg',
+        nativeCurrency,
+        usdPerNative,
+      });
     } else if (manualTotal > 0 && asset.amount > 0) {
-      costBasis[key] = { avgCost: manualTotal / asset.amount, totalInvested: manualTotal, source: 'manual_total' };
+      costBasis[key] = buildCostBasisEntry({
+        avgCost: manualTotal / asset.amount,
+        totalInvested: manualTotal,
+        source: 'manual_total',
+        nativeCurrency,
+        usdPerNative,
+      });
     }
   }
 }
@@ -157,8 +182,9 @@ async function buildPriceMap(symbols, bingxClient) {
   return prices;
 }
 
-async function buildCostBasis(balances, bingxClient) {
+async function buildCostBasis(balances, bingxClient, eurRate) {
   const costBasis = {};
+  const usdPerEur = eurRate > 0 ? 1 / eurRate : 1;
 
   if (bingxClient) {
     for (const asset of balances.bingx) {
@@ -166,11 +192,13 @@ async function buildCostBasis(balances, bingxClient) {
         const trades = await fetchBingxTradesForSymbol(bingxClient, asset.coin);
         const computed = calculateRemainingCostBasisFromTrades(trades);
         if (computed && computed.avgCost > 0) {
-          costBasis[asset.coin] = {
+          costBasis[asset.coin] = buildCostBasisEntry({
             avgCost: computed.avgCost,
             totalInvested: computed.avgCost * asset.amount,
             source: 'bingx_trades',
-          };
+            nativeCurrency: 'USDT',
+            usdPerNative: 1,
+          });
         }
       } catch {
         // Ignore per-asset trade history failures and keep response flowing.
@@ -215,11 +243,13 @@ async function buildCostBasis(balances, bingxClient) {
         const computed = calculateRemainingCostBasisFromTrades(trades);
         const assetMatch = balances.bitpanda.find((asset) => asset.coin === symbol);
         if (computed && computed.avgCost > 0 && assetMatch) {
-          costBasis[`bp_${symbol}`] = {
+          costBasis[`bp_${symbol}`] = buildCostBasisEntry({
             avgCost: computed.avgCost,
             totalInvested: computed.avgCost * assetMatch.amount,
             source: 'bitpanda_trades',
-          };
+            nativeCurrency: 'EUR',
+            usdPerNative: usdPerEur,
+          });
         }
       });
     } catch {
@@ -227,8 +257,8 @@ async function buildCostBasis(balances, bingxClient) {
     }
   }
 
-  applyManualCostOverrides(costBasis, balances.bitpanda, 'bp_', 'BITPANDA');
-  applyManualCostOverrides(costBasis, balances.bingx, '', 'BINGX');
+  applyManualCostOverrides(costBasis, balances.bitpanda, 'bp_', 'BITPANDA', 'EUR', usdPerEur);
+  applyManualCostOverrides(costBasis, balances.bingx, '', 'BINGX', 'USDT', 1);
 
   return costBasis;
 }
@@ -259,13 +289,14 @@ export async function getPortfolioSnapshot() {
 
   const symbols = [...new Set([...balances.bingx, ...balances.bitpanda].map((asset) => asset.coin))];
   const prices = await buildPriceMap(symbols, bingxClient);
-  const costBasis = await buildCostBasis(balances, bingxClient);
+  balances.eur_rate = await getEurRate();
+  const costBasis = await buildCostBasis(balances, bingxClient, balances.eur_rate);
 
   balances.bingx = balances.bingx.map((asset) => {
     const priceData = prices[asset.coin.toUpperCase()] || { price: 0, change24h: 0, icon: null, ath: 0 };
     const value = asset.amount * priceData.price;
     const cost = costBasis[asset.coin];
-    const invested = cost?.totalInvested || 0;
+    const invested = cost?.totalInvestedUsd || 0;
     const pnl = cost ? value - invested : null;
     balances.total_usd += value;
     if (cost) balances.total_invested += invested;
@@ -277,8 +308,12 @@ export async function getPortfolioSnapshot() {
       icon: priceData.icon,
       ath: priceData.ath,
       value,
-      avgCost: cost?.avgCost || null,
+      avgCost: cost?.avgCostUsd || null,
+      avgCostNative: cost?.avgCostNative || null,
+      avgCostCurrency: cost?.nativeCurrency || null,
       invested,
+      investedNative: cost?.totalInvestedNative || 0,
+      investedNativeCurrency: cost?.nativeCurrency || null,
       pnl,
       pnlPct: cost && invested > 0 ? (pnl / invested) * 100 : null,
       costBasisSource: cost?.source || null,
@@ -289,7 +324,7 @@ export async function getPortfolioSnapshot() {
     const priceData = prices[asset.coin.toUpperCase()] || { price: 0, change24h: 0, icon: null, ath: 0 };
     const value = asset.amount * priceData.price;
     const cost = costBasis[`bp_${asset.coin}`];
-    const invested = cost?.totalInvested || 0;
+    const invested = cost?.totalInvestedUsd || 0;
     const pnl = cost ? value - invested : null;
     balances.total_usd += value;
     if (cost) balances.total_invested += invested;
@@ -301,14 +336,17 @@ export async function getPortfolioSnapshot() {
       icon: priceData.icon,
       ath: priceData.ath,
       value,
-      avgCost: cost?.avgCost || null,
+      avgCost: cost?.avgCostUsd || null,
+      avgCostNative: cost?.avgCostNative || null,
+      avgCostCurrency: cost?.nativeCurrency || null,
       invested,
+      investedNative: cost?.totalInvestedNative || 0,
+      investedNativeCurrency: cost?.nativeCurrency || null,
       pnl,
       pnlPct: cost && invested > 0 ? (pnl / invested) * 100 : null,
       costBasisSource: cost?.source || null,
     };
   });
 
-  balances.eur_rate = await getEurRate();
   return balances;
 }

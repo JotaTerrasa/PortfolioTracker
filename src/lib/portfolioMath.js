@@ -2,6 +2,14 @@ export const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#d946ef', '#f43f5e', '#
 
 export const fmtUsd = (v) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtEur = (v, rate) => `€${(v * rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const fmtNativeCurrency = (value, currency, eurRate) => {
+  if (value === null || value === undefined || !currency) return '—';
+  if (currency === 'EUR') return `€${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (currency === 'USD' || currency === 'USDT') return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (currency === 'USD_FROM_EUR') return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (currency === 'EUR_FROM_USD') return `€${(value * eurRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+};
 export const fmtDurationCompact = (ms) => {
   if (!ms || !Number.isFinite(ms) || ms <= 0) return null;
   if (ms < 60 * 60 * 1000) return `${Math.max(1, Math.round(ms / 60000))}m`;

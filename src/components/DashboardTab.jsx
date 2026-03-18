@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, Wallet, History,
   ArrowUp, ArrowDown,
 } from 'lucide-react';
-import { COLORS, fmtDateTime, fmtDurationCompact, fmtEur, fmtSignedPct, fmtUsd } from '../lib/portfolioMath';
+import { COLORS, fmtDateTime, fmtDurationCompact, fmtEur, fmtNativeCurrency, fmtSignedPct, fmtUsd } from '../lib/portfolioMath';
 
 const DualValue = ({ usd, rate, large, color }) => (
   <div>
@@ -264,7 +264,13 @@ const DashboardTab = ({
                   {asset.avgCost ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                       <div style={{ fontWeight: 600, color: '#94a3b8' }}>{fmtUsd(asset.avgCost)}</div>
-                      <div style={{ color: '#475569', fontSize: '0.75rem' }}>{fmtEur(asset.avgCost, eurRate)}</div>
+                      {asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT' ? (
+                        <div style={{ color: '#475569', fontSize: '0.75rem' }}>
+                          {fmtNativeCurrency(asset.avgCostNative, asset.avgCostCurrency, eurRate)} · nativo {asset.exchange}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#475569', fontSize: '0.75rem' }}>{fmtEur(asset.avgCost, eurRate)}</div>
+                      )}
                       {globalBreakEven[asset.coin] && allAssets.filter((a) => a.coin === asset.coin).length > 1 && (
                         <div style={{ marginTop: '0.4rem', padding: '0.1rem 0.4rem', borderRadius: '0.4rem', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.65rem', color: '#a5b4fc', fontWeight: 700, textAlign: 'center' }}>
                           GLOBAL BE: {fmtUsd(globalBreakEven[asset.coin])}

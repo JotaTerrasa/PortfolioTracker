@@ -110,25 +110,47 @@ function applyManualCostOverrides(costBasis, assets, exchangePrefix, envPrefix, 
 }
 
 async function fetchBingxTradesForSymbol(client, coin) {
-  const symbol = `${coin}/USDT`;
-  const collected = [];
-  const pageLimit = 1000;
-  let since = undefined;
+  const symbol = `${coin}-USDT`;
+  try {
+    const response = await client.spotV1PrivateGetTradeHistoryOrders({ symbol, limit: 500 });
+    const orders = response?.data?.orders || [];
+    return orders
+      .filter((order) => order?.status === 'FILLED' && (order?.side === 'BUY' || order?.side === 'SELL'))
+      .map((order) => ({
+        side: order.side.toLowerCase(),
+        timestamp: safeNumber(order.updateTime || order.time),
+        amount: safeNumber(order.executedQty),
+        cost: safeNumber(order.cummulativeQuoteQty),
+        price: safeNumber(order.avgPrice || order.price),
+        fee: {
+          currency: order.feeAsset,
+          cost: Math.abs(safeNumber(order.fee)),
+        },
+        info: order,
+        symbol: `${coin}/USDT`,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+  } catch {
+    const marketSymbol = `${coin}/USDT`;
+    const collected = [];
+    const pageLimit = 1000;
+    let since = undefined;
 
-  for (let page = 0; page < 10; page += 1) {
-    const batch = await client.fetchMyTrades(symbol, since, pageLimit);
-    if (!Array.isArray(batch) || batch.length === 0) break;
+    for (let page = 0; page < 10; page += 1) {
+      const batch = await client.fetchMyTrades(marketSymbol, since, pageLimit);
+      if (!Array.isArray(batch) || batch.length === 0) break;
 
-    collected.push(...batch);
+      collected.push(...batch);
 
-    const lastTimestamp = safeNumber(batch[batch.length - 1]?.timestamp);
-    if (!lastTimestamp || batch.length < pageLimit) break;
-    since = lastTimestamp + 1;
+      const lastTimestamp = safeNumber(batch[batch.length - 1]?.timestamp);
+      if (!lastTimestamp || batch.length < pageLimit) break;
+      since = lastTimestamp + 1;
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return collected;
   }
-
-  return collected;
 }
 
 async function loadBingxAssets() {

@@ -14,7 +14,7 @@ const SimulatorTab = ({ consolidatedAssets, targetPrices, handleTargetChange, eu
           <thead>
             <tr>
               <th>Activo / Cantidad</th>
-              <th style={{ textAlign: 'center' }}>Precio Medio BE</th>
+              <th style={{ textAlign: 'center' }}>Coste Medio Spot</th>
               <th style={{ textAlign: 'center' }}>Precio Actual</th>
               <th style={{ textAlign: 'center' }}>Máximo (1 Año)</th>
               <th style={{ textAlign: 'center' }}>Precio Objetivo (USD)</th>

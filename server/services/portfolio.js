@@ -228,6 +228,10 @@ async function buildCostBasis(balances, bingxClient, eurRate) {
         if (attrs.status !== 'finished') return;
         if (attrs.type !== 'buy' && attrs.type !== 'sell') return;
 
+        const tagNames = (attrs.tags || []).map((tag) => tag?.attributes?.short_name).filter(Boolean);
+        const isMarginTrade = tagNames.some((tag) => tag.startsWith('margin_trading.'));
+        if (isMarginTrade) return;
+
         if (!groupedTrades[symbol]) groupedTrades[symbol] = [];
         groupedTrades[symbol].push({
           side: attrs.type,

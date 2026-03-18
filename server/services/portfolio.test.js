@@ -40,3 +40,17 @@ test('calculateRemainingCostBasisFromTrades returns null when position is fully 
 
   assert.equal(result, null);
 });
+
+test('bitpanda spot average matches non-margin ASTER example', () => {
+  const result = calculateRemainingCostBasisFromTrades([
+    { side: 'buy', amount: 1683.91966906, cost: 2931.83, timestamp: 1 },
+    { side: 'buy', amount: 314.83187905, cost: 500.0, timestamp: 2 },
+    { side: 'buy', amount: 131.37398234, cost: 200.0, timestamp: 3 },
+    { side: 'buy', amount: 104.4291755, cost: 150.0, timestamp: 4 },
+    { side: 'buy', amount: 320.58911113, cost: 300.0, timestamp: 5 },
+  ]);
+
+  assert.ok(result);
+  assert.equal(Number(result.quantity.toFixed(8)), 2555.14381708);
+  assert.equal(Number(result.avgCost.toFixed(4)), 1.5975);
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateRemainingCostBasisFromTrades } from './portfolio.js';
+import { calculateCumulativeCostBasisFromTrades, calculateRemainingCostBasisFromTrades } from './portfolio.js';
 
 test('calculateRemainingCostBasisFromTrades keeps weighted average of remaining inventory', () => {
   const result = calculateRemainingCostBasisFromTrades([
@@ -53,4 +53,16 @@ test('bitpanda spot average matches non-margin ASTER example', () => {
   assert.ok(result);
   assert.equal(Number(result.quantity.toFixed(8)), 2555.14381708);
   assert.equal(Number(result.avgCost.toFixed(4)), 1.5975);
+});
+
+test('calculateCumulativeCostBasisFromTrades matches BingX cumulative cost formula', () => {
+  const result = calculateCumulativeCostBasisFromTrades([
+    { side: 'buy', amount: 4483.835, cost: 3210.42586, fee: { currency: 'ASTER', cost: 4.483835 }, symbol: 'ASTER/USDT', timestamp: 1 },
+    { side: 'sell', amount: 4458.92, cost: 3219.34024, symbol: 'ASTER/USDT', timestamp: 2 },
+    { side: 'buy', amount: 4335.349, cost: 3216.828958, fee: { currency: 'ASTER', cost: 4.335349 }, symbol: 'ASTER/USDT', timestamp: 3 },
+  ]);
+
+  assert.ok(result);
+  assert.equal(Number(result.quantity.toFixed(6)), 4351.444816);
+  assert.equal(Number(result.avgCost.toFixed(6)), 0.735869);
 });

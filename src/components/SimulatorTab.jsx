@@ -62,9 +62,11 @@ const SimulatorTab = ({ consolidatedAssets, targetPrices, handleTargetChange, eu
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{fmtUsd(asset.avgCost)}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          {asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT'
-                            ? fmtNativeCurrency(asset.avgCostNative, asset.avgCostCurrency, eurRate)
-                            : fmtEur(asset.avgCost, eurRate)}
+                          {asset.exchange === 'BingX'
+                            ? 'acumulado'
+                            : asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT'
+                              ? fmtNativeCurrency(asset.avgCostNative, asset.avgCostCurrency, eurRate)
+                              : fmtEur(asset.avgCost, eurRate)}
                         </div>
                       </div>
                     ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>N/A</span>}

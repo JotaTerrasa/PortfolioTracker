@@ -67,6 +67,41 @@ export function calculateRemainingCostBasisFromTrades(trades) {
   };
 }
 
+export function calculateCumulativeCostBasisFromTrades(trades) {
+  const orderedTrades = [...trades]
+    .filter((trade) => trade && (trade.side === 'buy' || trade.side === 'sell'))
+    .sort((a, b) => safeNumber(a.timestamp) - safeNumber(b.timestamp));
+
+  let buyValue = 0;
+  let sellValue = 0;
+  let netBuyAmount = 0;
+
+  for (const trade of orderedTrades) {
+    const grossAmount = safeNumber(trade.amount);
+    const netAmount = getTradeNetBaseAmount(trade);
+    const cost = safeNumber(trade.cost, grossAmount * safeNumber(trade.price));
+
+    if (trade.side === 'buy') {
+      buyValue += cost;
+      netBuyAmount += netAmount;
+    } else if (trade.side === 'sell') {
+      sellValue += cost;
+      netBuyAmount -= grossAmount;
+    }
+  }
+
+  if (netBuyAmount <= 0) return null;
+
+  const totalInvested = buyValue - sellValue;
+  if (totalInvested <= 0) return null;
+
+  return {
+    quantity: netBuyAmount,
+    totalInvested,
+    avgCost: totalInvested / netBuyAmount,
+  };
+}
+
 function buildCostBasisEntry({ avgCost, totalInvested, source, nativeCurrency = 'USD', usdPerNative = 1 }) {
   const safeUsdPerNative = usdPerNative > 0 ? usdPerNative : 1;
   return {
@@ -212,12 +247,12 @@ async function buildCostBasis(balances, bingxClient, eurRate) {
     for (const asset of balances.bingx) {
       try {
         const trades = await fetchBingxTradesForSymbol(bingxClient, asset.coin);
-        const computed = calculateRemainingCostBasisFromTrades(trades);
+        const computed = calculateCumulativeCostBasisFromTrades(trades);
         if (computed && computed.avgCost > 0) {
           costBasis[asset.coin] = buildCostBasisEntry({
             avgCost: computed.avgCost,
             totalInvested: computed.avgCost * asset.amount,
-            source: 'bingx_trades',
+            source: 'bingx_cumulative_cost',
             nativeCurrency: 'USDT',
             usdPerNative: 1,
           });

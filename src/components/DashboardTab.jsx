@@ -264,7 +264,9 @@ const DashboardTab = ({
                   {asset.avgCost ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                       <div style={{ fontWeight: 600, color: '#94a3b8' }}>{fmtUsd(asset.avgCost)}</div>
-                      {asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT' ? (
+                      {asset.exchange === 'BingX' ? (
+                        <div style={{ color: '#475569', fontSize: '0.75rem' }}>precio acumulado de costo</div>
+                      ) : asset.avgCostCurrency && asset.avgCostCurrency !== 'USD' && asset.avgCostCurrency !== 'USDT' ? (
                         <div style={{ color: '#475569', fontSize: '0.75rem' }}>
                           {fmtNativeCurrency(asset.avgCostNative, asset.avgCostCurrency, eurRate)} · spot nativo {asset.exchange}
                         </div>

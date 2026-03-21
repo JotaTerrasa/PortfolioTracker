@@ -246,9 +246,19 @@ const App = () => {
       const amount = assets.reduce((sum, asset) => sum + asset.amount, 0);
       const avgCost = globalBreakEven[coin] || (assets.find((asset) => asset.avgCost)?.avgCost) || null;
       const price = assets[0]?.price || 0;
-      const icon = assets[0]?.icon || null;
-      const ath = assets[0]?.ath || 0;
-      return { coin, amount, avgCost, price, icon, ath };
+      const icon = assets.find((asset) => asset.icon)?.icon || null;
+      const ath = Math.max(...assets.map((asset) => asset.ath || 0), 0);
+      const avgCostSourceAsset = assets.find((asset) => asset.avgCost);
+      return {
+        coin,
+        amount,
+        avgCost,
+        avgCostNative: avgCostSourceAsset?.avgCostNative || null,
+        avgCostCurrency: avgCostSourceAsset?.avgCostCurrency || null,
+        price,
+        icon,
+        ath,
+      };
     })
     .sort((a, b) => (b.amount * b.price) - (a.amount * a.price));
 

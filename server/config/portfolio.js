@@ -11,6 +11,7 @@ export const COINGECKO_IDS = {
   KAS: 'kaspa', APT: 'aptos', OP: 'optimism', ARB: 'arbitrum',
   HYPE: 'hyperliquid', RAY: 'raydium',
   ASTR: 'astar', ASTER: 'aster-2',
+  PUMP: 'pump-fun',
   VSN: 'vision-network',
 };
 

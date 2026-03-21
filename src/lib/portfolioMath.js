@@ -1,7 +1,22 @@
 export const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981'];
 
-export const fmtUsd = (v) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-export const fmtEur = (v, rate) => `€${(v * rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function getAdaptiveFractionDigits(value) {
+  const abs = Math.abs(Number(value) || 0);
+  if (abs >= 1) return 2;
+  if (abs >= 0.01) return 4;
+  if (abs >= 0.0001) return 6;
+  return 8;
+}
+
+export const fmtUsd = (v) => {
+  const digits = getAdaptiveFractionDigits(v);
+  return `$${v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+};
+export const fmtEur = (v, rate) => {
+  const converted = v * rate;
+  const digits = getAdaptiveFractionDigits(converted);
+  return `€${converted.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+};
 export const fmtNativeCurrency = (value, currency, eurRate) => {
   if (value === null || value === undefined || !currency) return '—';
   if (currency === 'EUR') return `€${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
